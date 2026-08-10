@@ -74,6 +74,23 @@ CREATE TABLE users
 
 -- USER SUBTYPES
 
+CREATE TABLE personal_accounts
+(
+    personal_account_id UUID PRIMARY KEY 
+        DEFAULT uuid_generate_v4(),
+
+    user_id UUID UNIQUE NOT NULL,
+
+    created_at TIMESTAMP 
+        DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY(user_id) 
+        REFERENCES users(user_id) 
+        ON DELETE CASCADE
+);
+
+
+
 CREATE TABLE agents
 (
     agent_id UUID PRIMARY KEY
@@ -86,6 +103,13 @@ CREATE TABLE agents
     commission_rate NUMERIC(5,2)
         DEFAULT 1.50
         CHECK (commission_rate >= 0),
+        
+    status account_status
+        DEFAULT 'ACTIVE',
+
+    created_at TIMESTAMP
+        DEFAULT CURRENT_TIMESTAMP,
+
 
     FOREIGN KEY (user_id)
         REFERENCES users(user_id)
@@ -103,6 +127,12 @@ CREATE TABLE merchants
 
     trade_license VARCHAR(50),
 
+    status account_status
+        DEFAULT 'ACTIVE',
+
+    created_at TIMESTAMP
+        DEFAULT CURRENT_TIMESTAMP,
+
     FOREIGN KEY(user_id)
         REFERENCES users(user_id)
         ON DELETE CASCADE
@@ -115,12 +145,39 @@ CREATE TABLE billers
 
     user_id UUID UNIQUE NOT NULL,
 
-    service_type biller_service NOT NULL,
-
     organization_name VARCHAR(150) NOT NULL,
+
+    status account_status
+        DEFAULT 'ACTIVE',
+
+    created_at TIMESTAMP
+        DEFAULT CURRENT_TIMESTAMP,
+
+    approved_by UUID,
 
     FOREIGN KEY(user_id)
         REFERENCES users(user_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_biller_admin 
+        FOREIGN KEY (approved_by) 
+        REFERENCES admins(admin_id) 
+        ON DELETE SET NULL
+);
+
+CREATE TABLE services
+(
+    service_id UUID PRIMARY KEY 
+        DEFAULT uuid_generate_v4(), -- Added a PK for good practice
+
+    biller_id UUID NOT NULL, -- Links back to the Biller
+
+    service_name biller_service NOT NULL, -- Renamed to match ERD
+
+    organization_name VARCHAR(150) NOT NULL,
+
+    FOREIGN KEY(biller_id) 
+        REFERENCES billers(biller_id) 
         ON DELETE CASCADE
 );
 
@@ -136,6 +193,9 @@ CREATE TABLE admins
     permission_level SMALLINT
         DEFAULT 1,
 
+    created_at TIMESTAMP
+        DEFAULT CURRENT_TIMESTAMP,
+
     FOREIGN KEY(user_id)
         REFERENCES users(user_id)
         ON DELETE CASCADE
@@ -150,9 +210,7 @@ CREATE TABLE accounts
 
     user_id UUID NOT NULL,
 
-    account_number VARCHAR(20)
-        UNIQUE NOT NULL,
-
+    
     account_type account_type
         DEFAULT 'PERSONAL',
 
@@ -163,11 +221,6 @@ CREATE TABLE accounts
     --daily_limit NUMERIC(15,2)             LIMITS VARY WITH ACCOUNT TYPE
     --    DEFAULT 50000,
 
-    status account_status
-        DEFAULT 'ACTIVE',
-
-    created_at TIMESTAMP
-        DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY(user_id)
         REFERENCES users(user_id)
@@ -203,7 +256,7 @@ CREATE TABLE transactions
         DEFAULT 0
         CHECK (fee >= 0),
 
-    status transaction_status
+    transaction_status transaction_status
         DEFAULT 'PENDING',
 
     remarks VARCHAR(255),
@@ -213,7 +266,7 @@ CREATE TABLE transactions
 
     FOREIGN KEY(sender_account_id)
         REFERENCES accounts(account_id)
-        ON DELETE RESTRICT
+        ON DELETE RESTRICT,
     FOREIGN KEY(receiver_account_id)
         REFERENCES accounts(account_id),
 
@@ -223,23 +276,6 @@ CREATE TABLE transactions
 -- =============================================================
 -- SEND MONEY TRANSACTIONS
 -- =============================================================
-
-CREATE TABLE send_money_transactions
-(
-    transaction_id UUID PRIMARY KEY,
-
-    receiver_account_id UUID NOT NULL,
-
-    FOREIGN KEY(transaction_id)
-        REFERENCES transactions(transaction_id)
-        ON DELETE CASCADE,
-
-    FOREIGN KEY(receiver_account_id)
-        REFERENCES accounts(account_id)
-        ON DELETE RESTRICT,
-
-    CHECK (receiver_account_id IS NOT NULL)
-);
 
 -- =============================================================
 -- CASH TRANSACTIONS
@@ -273,7 +309,7 @@ CREATE TABLE cash_transactions
 -- MERCHANT PAYMENTS
 -- =============================================================
 
-CREATE TABLE merchant_payment_transactions
+CREATE TABLE payment_transactions
 (
     transaction_id UUID PRIMARY KEY,
 
@@ -294,15 +330,11 @@ CREATE TABLE merchant_payment_transactions
 -- BILL PAYMENTS
 -- =============================================================
 
-CREATE TABLE bill_payment_transactions
+CREATE TABLE bill_transactions
 (
     transaction_id UUID PRIMARY KEY,
 
     biller_id UUID NOT NULL,
-
-    bill_number VARCHAR(50) NOT NULL,
-
-    customer_reference VARCHAR(100),
 
     billing_month VARCHAR(20),
 
@@ -354,6 +386,23 @@ CREATE TABLE audit_logs
         ON DELETE SET NULL
 );
 
+-- Add approval tracking to Agents
+ALTER TABLE agents
+ADD COLUMN approved_by UUID,
+ADD CONSTRAINT fk_agent_admin 
+    FOREIGN KEY (approved_by) 
+    REFERENCES admins(admin_id) 
+    ON DELETE SET NULL;
+
+-- Add approval tracking to Merchants
+ALTER TABLE merchants
+ADD COLUMN approved_by UUID,
+ADD CONSTRAINT fk_merchant_admin 
+    FOREIGN KEY (approved_by) 
+    REFERENCES admins(admin_id) 
+    ON DELETE SET NULL;
+
+
 -- =============================================================
 -- INDEXES
 -- =============================================================
@@ -361,32 +410,24 @@ CREATE TABLE audit_logs
 CREATE INDEX idx_accounts_user
 ON accounts(user_id);
 
-CREATE INDEX idx_accounts_number
-ON accounts(account_number);
 
 CREATE INDEX idx_transactions_sender
 ON transactions(sender_account_id);
 
 CREATE INDEX idx_transactions_reference
-ON transactions(reference_no);
+ON transactions(reference_no); -- Changed back to reference_no
 
 CREATE INDEX idx_transactions_time
 ON transactions(transaction_time);
 
 CREATE INDEX idx_transactions_status
-ON transactions(status);
-
-CREATE INDEX idx_send_money_receiver
-ON send_money_transactions(receiver_account_id);
+ON transactions(transaction_status);
 
 CREATE INDEX idx_cash_agent
 ON cash_transactions(agent_id);
 
-CREATE INDEX idx_merchant_payment
-ON merchant_payment_transactions(merchant_id);
-
-CREATE INDEX idx_bill_payment
-ON bill_payment_transactions(biller_id);
+CREATE INDEX idx_merchant_payment ON payment_transactions(merchant_id);
+CREATE INDEX idx_bill_payment ON bill_transactions(biller_id);
 
 CREATE INDEX idx_audit_admin
 ON audit_logs(admin_id);
