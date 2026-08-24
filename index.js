@@ -1,23 +1,29 @@
 const { Pool } = require('pg');
-require('dotenv').config(); // Eita .env file read korbe
+require('dotenv').config();
 
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD, // Automatic env file theke nibe
+  connectionString: process.env.DATABASE_URL,
 });
 
 async function testConnection() {
   try {
+    // 1. Attempt to connect to the database
     const client = await pool.connect();
-    console.log('Connected to PostgreSQL successfully! 🚀');
-    const res = await client.query('SELECT NOW()');
-    console.log('Database Current Time:', res.rows[0].now);
+    console.log('✅ Connected to PostgreSQL successfully!\n');
+    
+    // 2. Query the users table
+    console.log('Fetching QuickiePay Users...\n');
+    const res = await client.query('SELECT * FROM users');
+    
+    // 3. Print the results as a clean table
+    console.table(res.rows);
+    
+    // 4. Release the client back to the pool
     client.release();
+
   } catch (err) {
-    console.error('Database connection fail! ❌', err.message);
+    // 5. Handle any connection or querying errors
+    console.error('❌ Database connection or query failed!', err.message);
   }
 }
 

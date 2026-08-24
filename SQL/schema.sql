@@ -1,6 +1,7 @@
 -- QuickiePay
 -- PostgreSQL Schema
 
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ENUM TYPES
 CREATE TYPE account_type AS ENUM
 (
@@ -26,7 +27,7 @@ CREATE TYPE transaction_type AS ENUM
     'MERCHANT_PAYMENT',
     'BILL_PAYMENT',
     'ADD_MONEY',
-    'MOBILE RECHARGE'
+    'MOBILE_RECHARGE'
 );
 
 CREATE TYPE transaction_status AS ENUM
@@ -72,6 +73,29 @@ CREATE TABLE users
         DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE accounts
+(
+    account_id UUID PRIMARY KEY
+        DEFAULT uuid_generate_v4(),
+
+    user_id UUID NOT NULL,
+
+    
+    account_type account_type
+        DEFAULT 'PERSONAL',
+
+    balance NUMERIC(15,2)
+        DEFAULT 0
+        CHECK(balance >= 0),
+
+    --daily_limit NUMERIC(15,2)             LIMITS VARY WITH ACCOUNT TYPE
+    --    DEFAULT 50000,
+
+
+    FOREIGN KEY(user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
+);
 -- USER SUBTYPES
 
 CREATE TABLE personal_accounts
@@ -84,12 +108,33 @@ CREATE TABLE personal_accounts
     created_at TIMESTAMP 
         DEFAULT CURRENT_TIMESTAMP,
 
+    status account_status
+    DEFAULT 'ACTIVE',
+
     FOREIGN KEY(user_id) 
         REFERENCES users(user_id) 
         ON DELETE CASCADE
 );
 
+CREATE TABLE admins
+(
+    admin_id UUID PRIMARY KEY
+        DEFAULT uuid_generate_v4(),
 
+    user_id UUID UNIQUE NOT NULL,
+
+    role VARCHAR(40) NOT NULL,
+
+    permission_level SMALLINT
+        DEFAULT 1,
+
+    created_at TIMESTAMP
+        DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY(user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
+);
 
 CREATE TABLE agents
 (
@@ -145,8 +190,6 @@ CREATE TABLE billers
 
     user_id UUID UNIQUE NOT NULL,
 
-    organization_name VARCHAR(150) NOT NULL,
-
     status account_status
         DEFAULT 'ACTIVE',
 
@@ -181,51 +224,7 @@ CREATE TABLE services
         ON DELETE CASCADE
 );
 
-CREATE TABLE admins
-(
-    admin_id UUID PRIMARY KEY
-        DEFAULT uuid_generate_v4(),
 
-    user_id UUID UNIQUE NOT NULL,
-
-    role VARCHAR(40) NOT NULL,
-
-    permission_level SMALLINT
-        DEFAULT 1,
-
-    created_at TIMESTAMP
-        DEFAULT CURRENT_TIMESTAMP,
-
-    FOREIGN KEY(user_id)
-        REFERENCES users(user_id)
-        ON DELETE CASCADE
-);
-
--- ACCOUNTS
-
-CREATE TABLE accounts
-(
-    account_id UUID PRIMARY KEY
-        DEFAULT uuid_generate_v4(),
-
-    user_id UUID NOT NULL,
-
-    
-    account_type account_type
-        DEFAULT 'PERSONAL',
-
-    balance NUMERIC(15,2)
-        DEFAULT 0
-        CHECK(balance >= 0),
-
-    --daily_limit NUMERIC(15,2)             LIMITS VARY WITH ACCOUNT TYPE
-    --    DEFAULT 50000,
-
-
-    FOREIGN KEY(user_id)
-        REFERENCES users(user_id)
-        ON DELETE CASCADE
-);
 
 -- =============================================================
 -- TRANSACTIONS (SUPERTYPE)
@@ -414,14 +413,11 @@ ON accounts(user_id);
 CREATE INDEX idx_transactions_sender
 ON transactions(sender_account_id);
 
-CREATE INDEX idx_transactions_reference
-ON transactions(reference_no); -- Changed back to reference_no
+CREATE INDEX idx_transactions_receiver
+ON transactions(receiver_account_id);
 
 CREATE INDEX idx_transactions_time
 ON transactions(transaction_time);
-
-CREATE INDEX idx_transactions_status
-ON transactions(transaction_status);
 
 CREATE INDEX idx_cash_agent
 ON cash_transactions(agent_id);
