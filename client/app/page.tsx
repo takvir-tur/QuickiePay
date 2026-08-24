@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ArrowUpRight,
   Bell,
@@ -67,6 +67,21 @@ export default function App() {
   const [balanceVisible, setBalanceVisible] = useState(false);
   const [activeNav, setActiveNav] = useState("Dashboard");
 
+  const [userData, setUserData] = useState({ 
+    full_name: "Loading...", 
+    balance: "0.00" 
+  });
+
+  // 2. Fetch the data when the page loads
+  useEffect(() => {
+    fetch("http://localhost:5001/api/users/00000000-0000-0000-0000-000000000000") 
+      .then((response) => response.json())
+      .then((data) => {
+        setUserData(data);
+      })
+      .catch((error) => console.error("Error fetching data:", error));
+  }, []);
+
   return (
     <div className={dark ? "dark" : ""}>
       <div className="flex min-h-screen bg-gray-50 text-gray-900 transition-colors dark:bg-gray-900 dark:text-gray-100">
@@ -113,11 +128,11 @@ export default function App() {
             }`}
           >
             <div className="grid size-9 shrink-0 place-items-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700 dark:bg-blue-900 dark:text-blue-200">
-              AM
+              TT
             </div>
             {!collapsed && (
               <span className="min-w-0 text-left">
-                <span className="block truncate text-sm font-semibold">Alex Morgan</span>
+                <span className="block truncate text-sm font-semibold"> {userData.full_name} </span>
                 <span className="block truncate text-xs text-gray-500 dark:text-gray-400">View profile</span>
               </span>
             )}
@@ -190,11 +205,11 @@ export default function App() {
           <header className="flex items-start justify-between gap-4 border-b border-gray-200 bg-white/70 px-5 py-6 backdrop-blur md:px-10 dark:border-gray-800 dark:bg-gray-950/70">
             <div>
               <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
-                Good morning, Alex
+                Good morning, {userData.full_name.split(' ')[0]}
               </h1>
               <div className="mt-2 flex items-center gap-2">
                 <p className="text-xl font-semibold tracking-tight text-blue-600 md:text-2xl dark:text-blue-500">
-                  {balanceVisible ? "$12,480.50" : "••••••"}
+                  {balanceVisible ? `৳ ${userData.balance}` : "••••••"}
                 </p>
                 <button
                   onClick={() => setBalanceVisible(!balanceVisible)}

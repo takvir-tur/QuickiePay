@@ -3,7 +3,7 @@
 -- Hardcoded UUIDs for precise relational mapping
 -- ====================================================================
 INSERT INTO users (user_id, full_name, phone_number, email, pin_hash, national_id) VALUES 
-('00000000-0000-0000-0000-000000000000', 'Takvir Admin', '01500000000', 'admin@quickiepay.com', 'hashed_pin_1234', 'NID-0000000001'),
+('00000000-0000-0000-0000-000000000000', 'Takvir Tur', '01500000000', 'admin@quickiepay.com', 'hashed_pin_1234', 'NID-0000000001'),
 ('11111111-1111-1111-1111-111111111111', 'Rafiqul Islam', '01711111111', 'rafiq@example.com', 'hashed_pin_1234', 'NID-1111111111'),
 ('22222222-2222-2222-2222-222222222222', 'Tariq Mahmud', '01822222222', 'tariq@example.com', 'hashed_pin_1234', 'NID-2222222222'),
 ('33333333-3333-3333-3333-333333333333', 'Nadia Rahman', '01933333333', 'nadia@example.com', 'hashed_pin_1234', 'NID-3333333333'),
