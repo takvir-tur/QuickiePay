@@ -27,9 +27,13 @@ export default function LoginPage() {
 
       if (res.ok) {
         localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        
+        localStorage.setItem('userId', data.user.user_id); 
+        
+        localStorage.setItem('user', JSON.stringify(data.user)); 
+        
         router.push('/');
-      } else {
+      }  else {
         setMessage(`Error: ${data.error}`);
       }
     } catch (err) {
