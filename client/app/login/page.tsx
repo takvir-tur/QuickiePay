@@ -1,15 +1,18 @@
 'use client';
+import { useTheme } from "next-themes";
 import { useState, ChangeEvent, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Zap, Sun, Moon } from 'lucide-react';
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({ phone_number: '', pin: '' });
   const [message, setMessage] = useState<string>('');
+  const { theme, setTheme } = useTheme();
   const router = useRouter();
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setFormData({ ...formData, [e.target.name]: e.target.value }); //[cite: 3]
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -17,7 +20,7 @@ export default function LoginPage() {
     setMessage('Connecting to backend...');
 
     try {
-      const res = await fetch('http://localhost:5001/api/auth/login', {
+      const res = await fetch('http://localhost:5001/api/auth/login', { //[cite: 3]
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -26,14 +29,12 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok) {
-        localStorage.setItem('token', data.token);
+        localStorage.setItem('token', data.token); //[cite: 3]
+        localStorage.setItem('userId', data.user.user_id); //[cite: 3]
+        localStorage.setItem('user', JSON.stringify(data.user)); //[cite: 3]
         
-        localStorage.setItem('userId', data.user.user_id); 
-        
-        localStorage.setItem('user', JSON.stringify(data.user)); 
-        
-        router.push('/');
-      }  else {
+        router.push('/'); //[cite: 3]
+      } else {
         setMessage(`Error: ${data.error}`);
       }
     } catch (err) {
@@ -42,23 +43,79 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ maxWidth: '350px', margin: '50px auto', padding: '20px', border: '1px solid #ccc', borderRadius: '8px' }}>
-      <h2>QuickiePay Login</h2>
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '10px' }}>
-          <label>Phone Number:</label>
-          <input type="text" name="phone_number" value={formData.phone_number} onChange={handleChange} required style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-5 transition-colors dark:bg-gray-900">
+        
+        {/* Theme Toggle Top Right */}
+        <div className="absolute right-6 top-6">
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
+          </button>
         </div>
-        <div style={{ marginBottom: '10px' }}>
-          <label>PIN:</label>
-          <input type="password" name="pin" value={formData.pin} onChange={handleChange} required style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
+
+        {/* Main Card */}
+        <div className="w-full max-w-[400px] rounded-3xl border border-gray-200 bg-white p-8 shadow-sm transition-all dark:border-gray-800 dark:bg-gray-950">
+          
+          {/* Logo header */}
+          <div className="mb-8 flex flex-col items-center justify-center gap-3">
+            <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-blue-600 text-white">
+              <Zap className="size-7 fill-current" />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+              quickie<span className="text-blue-600">pay</span>
+            </h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Welcome back! Please enter your details.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Phone Number</label>
+              <input 
+                type="text" 
+                name="phone_number" 
+                value={formData.phone_number} 
+                onChange={handleChange} 
+                required 
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+              />
+            </div>
+            
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">PIN</label>
+              <input 
+                type="password" 
+                name="pin" 
+                value={formData.pin} 
+                onChange={handleChange} 
+                required 
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+              />
+            </div>
+
+            {message && (
+              <div className="mt-2 rounded-xl bg-blue-50 p-3 text-center text-sm text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                {message}
+              </div>
+            )}
+
+            <button 
+              type="submit" 
+              className="mt-4 w-full rounded-xl bg-blue-600 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950"
+            >
+              Log in
+            </button>
+          </form>
+
+          <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+            Don't have an account?{' '}
+            <Link href="/register" className="font-semibold text-blue-600 hover:underline dark:text-blue-500">
+              Register here
+            </Link>
+          </p>
         </div>
-        <button type="submit" style={{ width: '100%', padding: '10px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Login</button>
-      </form>
-      {message && <p style={{ marginTop: '15px' }}>{message}</p>}
-      <p style={{ marginTop: '15px' }}>
-        Don't have an account? <Link href="/register" style={{ color: '#007bff' }}>Register here</Link>
-      </p>
-    </div>
+      </div>
   );
 }

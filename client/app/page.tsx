@@ -1,4 +1,5 @@
 "use client";
+import { useTheme } from "next-themes";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -63,7 +64,7 @@ const offers = [
 ];
 
 export default function App() {
-  const [dark, setDark] = useState(false);
+  const { theme, setTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [balanceVisible, setBalanceVisible] = useState(false);
   const [activeNav, setActiveNav] = useState("Dashboard");
@@ -86,7 +87,6 @@ export default function App() {
 
 
   return (
-    <div className={dark ? "dark" : ""}>
       <div className="flex min-h-screen bg-gray-50 text-gray-900 transition-colors dark:bg-gray-900 dark:text-gray-100">
         <aside
           className={`hidden shrink-0 flex-col border-r border-gray-200 bg-white py-6 transition-all duration-300 lg:flex dark:border-gray-800 dark:bg-gray-950 ${
@@ -231,11 +231,11 @@ export default function App() {
                 <Bell className="size-[19px]" />
               </button>
               <button
-                onClick={() => setDark(!dark)}
-                className="rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                className="rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
                 aria-label="Toggle theme"
               >
-                {dark ? <Sun className="size-[19px]" /> : <Moon className="size-[19px]" />}
+                {theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
               </button>
               <div className="grid size-9 place-items-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700 dark:bg-blue-900 dark:text-blue-200">
                 {userData.full_name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
@@ -330,6 +330,5 @@ export default function App() {
           </div>
         </main>
       </div>
-    </div>
   );
 }
