@@ -1,3 +1,4 @@
+require('dotenv').config();
 const pool = require('../db_connection'); // Import the database pool
 
 async function getAllUsers(req, res) {
