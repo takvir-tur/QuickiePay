@@ -65,6 +65,7 @@ const offers = [
 
 export default function App() {
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [balanceVisible, setBalanceVisible] = useState(false);
   const [activeNav, setActiveNav] = useState("Dashboard");
@@ -73,14 +74,30 @@ export default function App() {
   const [userData, setUserData] = useState({ full_name: "Loading...", balance: "0.00" });
 
   useEffect(() => {
-    const savedUserId = localStorage.getItem("userId");
-    if (!savedUserId) {
+    setMounted(true);
+    const savedUserId = sessionStorage.getItem("userId");
+    const token = sessionStorage.getItem("token");
+
+    if (!savedUserId || !token) {
       router.push("/login");
       return; 
     }
 
-    fetch(`http://localhost:5001/api/users/${savedUserId}`) 
-      .then((response) => response.json())
+    fetch(`http://localhost:5001/api/users/${savedUserId}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}` // jwt verify for security
+      }
+    })
+      .then((response) => {
+        if (response.status === 401 || response.status === 403) {
+          sessionStorage.clear();
+          router.push("/login");
+          throw new Error("Unauthorized");
+        }
+        return response.json();
+      })
       .then((data) => setUserData(data))
       .catch((error) => console.error("Error fetching data:", error));
   }, [router]);
@@ -235,7 +252,12 @@ export default function App() {
                 className="rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
                 aria-label="Toggle theme"
               >
-                {theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
+                {}
+                {mounted ? (
+                  theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />
+                ) : (
+                  <div className="size-5" /> 
+                )}
               </button>
               <div className="grid size-9 place-items-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700 dark:bg-blue-900 dark:text-blue-200">
                 {userData.full_name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}

@@ -54,7 +54,6 @@ async function registerUser(req, res) {
       [newUserId, business_name, trade_license || null]);
     
     } else if (account_type === 'BILLER') {
-      // Billers require an entry in 'billers' AND 'services'
       const billerResult = await pool.query(
         'INSERT INTO billers (user_id) VALUES ($1) RETURNING biller_id', 
         [newUserId]
@@ -67,7 +66,6 @@ async function registerUser(req, res) {
       );
     }
 
-    // 5. Commit the transaction if everything succeeded!
     await pool.query('COMMIT');
 
     res.status(201).json({ message: 'User registered successfully! 🎉', user: userResult.rows[0] });

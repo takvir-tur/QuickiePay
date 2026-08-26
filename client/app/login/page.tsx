@@ -1,6 +1,6 @@
 'use client';
 import { useTheme } from "next-themes";
-import { useState, ChangeEvent, FormEvent } from 'react';
+import { useState, ChangeEvent, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Zap, Sun, Moon } from 'lucide-react';
@@ -9,7 +9,10 @@ export default function LoginPage() {
   const [formData, setFormData] = useState({ phone_number: '', pin: '' });
   const [message, setMessage] = useState<string>('');
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
+
+  useEffect(() => setMounted(true), []);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value }); //[cite: 3]
@@ -29,9 +32,10 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok) {
-        localStorage.setItem('token', data.token); //[cite: 3]
-        localStorage.setItem('userId', data.user.user_id); //[cite: 3]
-        localStorage.setItem('user', JSON.stringify(data.user)); //[cite: 3]
+        //session storage ensuring closing and reopening browser requires login again
+        sessionStorage.setItem('token', data.token);
+        sessionStorage.setItem('userId', data.user.user_id);
+        sessionStorage.setItem('user', JSON.stringify(data.user));
         
         router.push('/'); //[cite: 3]
       } else {
@@ -52,7 +56,11 @@ export default function LoginPage() {
             className="rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
             aria-label="Toggle theme"
           >
-            {theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
+            {mounted ? (
+              theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />
+            ) : (
+              <div className="size-5" /> 
+            )}
           </button>
         </div>
 

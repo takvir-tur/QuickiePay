@@ -6,7 +6,7 @@ const authRoutes = require('./routes/authRoutes');
 const app = express();
 const PORT = 5001;
 
-app.use(cors()); // Allow frontend cross-origin requests
+app.use(cors());
 app.use(express.json());
 
 app.use('/api/users', userRoutes);
