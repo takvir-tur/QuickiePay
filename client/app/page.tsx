@@ -27,6 +27,7 @@ import {
   Ticket,
   Wallet,
   Zap,
+  LogOut
 } from "lucide-react";
 
 const navItems = [
@@ -72,6 +73,12 @@ export default function App() {
 
   const router = useRouter();
   const [userData, setUserData] = useState({ full_name: "Loading...", balance: "0.00" });
+
+  //logout
+  const handleLogout = () => {
+    sessionStorage.clear();
+    router.push("/login");
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -206,6 +213,16 @@ export default function App() {
                 {!collapsed && label}
               </button>
             ))}
+            <button
+              onClick={handleLogout}
+              title="Log out"
+              className={`mt-2 flex items-center gap-3 rounded-xl py-3 text-sm font-medium transition-colors text-red-600 hover:bg-red-50 dark:text-red-500 dark:hover:bg-red-950/30 ${
+                collapsed ? "justify-center px-0" : "px-3"
+              }`}
+            >
+              <LogOut className="size-[18px] shrink-0" />
+              {!collapsed && "Log out"}
+            </button>
           </nav>
 
           {!collapsed && (

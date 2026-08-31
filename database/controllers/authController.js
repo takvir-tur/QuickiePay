@@ -13,6 +13,31 @@ async function registerUser(req, res) {
   if (pin !== confirm_pin) {
     return res.status(400).json({ error: 'PINs do not match' });
   }
+  //Validate PIN (4-6 digits)
+  const pinRegex = /^\d{4,6}$/;
+  if (!pinRegex.test(pin)) {
+    return res.status(400).json({ error: 'PIN must be between 4 and 6 digits and contain only numbers' });
+  }
+
+  //Validate Phone Number (11 digit with start 01)
+  const phoneRegex = /^(?:\+88|88)?(01[3-9]\d{8})$/;
+  if (!phoneRegex.test(phone_number)) {
+    return res.status(400).json({ error: 'Invalid phone number' });
+  }
+
+  //Validate nid
+  const nidRegex = /^\d{10}$/;
+  if (!nidRegex.test(national_id)) {
+    return res.status(400).json({ error: 'invalid nid' });
+  }
+
+  //Validate Email
+  if (email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+  }
 
   try {
     await pool.query('BEGIN');
