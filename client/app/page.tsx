@@ -43,11 +43,11 @@ const manageItems = [
 ];
 
 const primaryActions = [
-  { label: "Send Money", detail: "To friends & family", icon: ArrowUpRight, tone: "bg-blue-500" },
-  { label: "Mobile Recharge", detail: "Any operator, instantly", icon: Smartphone, tone: "bg-orange-500" },
-  { label: "Cash Out", detail: "Agent or ATM", icon: HandCoins, tone: "bg-green-500" },
-  { label: "Pay Bill", detail: "Utilities & more", icon: Receipt, tone: "bg-purple-500" },
-  { label: "Make Payment", detail: "Shops & merchants", icon: CreditCard, tone: "bg-pink-500" },
+  { label: "Send Money", href: "/send-money", detail: "To friends & family", icon: ArrowUpRight, tone: "bg-blue-500" },
+  { label: "Mobile Recharge", href: "#", detail: "Any operator, instantly", icon: Smartphone, tone: "bg-orange-500" },
+  { label: "Cash Out", href: "#", detail: "Agent or ATM", icon: HandCoins, tone: "bg-green-500" },
+  { label: "Pay Bill", href: "#", detail: "Utilities & more", icon: Receipt, tone: "bg-purple-500" },
+  { label: "Make Payment", href: "#", detail: "Shops & merchants", icon: CreditCard, tone: "bg-pink-500" },
 ];
 
 const quickActions = [
@@ -72,7 +72,12 @@ export default function App() {
   const [activeNav, setActiveNav] = useState("Dashboard");
 
   const router = useRouter();
-  const [userData, setUserData] = useState({ full_name: "Loading...", balance: "0.00" });
+
+  const [userData, setUserData] = useState<{
+    full_name: string;
+    balance: string;
+    quickActions: any[];
+  }>({ full_name: "Loading...", balance: "0.00", quickActions: [] });
 
   //logout
   const handleLogout = () => {
@@ -287,9 +292,10 @@ export default function App() {
               <h2 className="text-lg font-semibold tracking-tight">What would you like to do?</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Your most used QuickiePay services</p>
               <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-                {primaryActions.map(({ label, detail, icon: Icon, tone }) => (
+                {primaryActions.map(({ label, href, detail, icon: Icon, tone }) => (
                   <button
                     key={label}
+                    onClick={() => router.push(href)} //wires button
                     className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:border-blue-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950 dark:hover:border-blue-800"
                   >
                     <div
@@ -304,31 +310,38 @@ export default function App() {
               </div>
             </section>
 
-            <section className="mt-10">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold tracking-tight">Quick actions</h2>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Recents & saved templates</p>
+            {/* ONLY render this section if there are actual recent transactions */}
+            {userData.quickActions && userData.quickActions.length > 0 && (
+              <section className="mt-10">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold tracking-tight">Quick actions</h2>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Recents & saved templates</p>
+                  </div>
+                  <button className="text-sm font-semibold text-blue-600 hover:underline dark:text-blue-500">View all</button>
                 </div>
-                <button className="text-sm font-semibold text-blue-600 hover:underline dark:text-blue-500">View all</button>
-              </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {quickActions.map(({ label, detail, icon: Icon }) => (
-                  <button
-                    key={label}
-                    className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-left transition-all hover:border-blue-200 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:hover:border-blue-900 dark:hover:bg-gray-900"
-                  >
-                    <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400">
-                      <Icon className="size-[18px]" />
-                    </div>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold">{label}</span>
-                      <span className="block truncate text-xs text-gray-500 dark:text-gray-400">{detail}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
+                
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {userData.quickActions.map((action, index) => (
+                    <button
+                      key={index}
+                      onClick={() => router.push(`/send-money?receiver=${action.phone}`)} // <-- Routes with pre-filled number!
+                      className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-left transition-all hover:border-blue-200 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-950 dark:hover:border-blue-900 dark:hover:bg-gray-900"
+                    >
+                      <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-400">
+                        <ArrowUpRight className="size-[18px]" />
+                      </div>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold">{action.label}</span>
+                        <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
+                          {action.transaction_type.replace('_', ' ')} · ৳{parseFloat(action.amount).toFixed(2)}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="mt-10">
               <div className="flex items-center justify-between">
