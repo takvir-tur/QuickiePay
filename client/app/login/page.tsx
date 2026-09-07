@@ -41,7 +41,7 @@ export default function LoginPage() {
   if (data.user.role === 'AGENT') {
     router.push('/agent');
   }
-  else if (data.user.role === 'BUSINESS') {
+  else if (data.user.role === 'BUSINESS'|| data.user.role === 'MERCHANT') {
     router.push('/merchant');
   }
   else if (data.user.role === 'BILLER') {

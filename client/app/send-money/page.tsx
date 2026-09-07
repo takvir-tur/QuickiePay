@@ -24,11 +24,29 @@ function SendMoneyContent(){
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [availableBalance, setAvailableBalance] = useState<string>("0.00");
+  
+  // ব্যাক লিংক ডাইনামিক করার জন্য স্টেট
+  const [backHref, setBackHref] = useState("/");
 
-  // Fetch the logged-in user's live balance
+  
+  // Fetch the logged-in user's live balance and check role
   useEffect(() => {
     const savedUserId = sessionStorage.getItem("userId");
     const token = sessionStorage.getItem("token");
+    const role = sessionStorage.getItem("role");
+
+    // রোল ছোট বা বড় হাতের যাই হোক না কেন, বড় হাতের করে চেক করা হচ্ছে
+    const normalizedRole = role ? role.toUpperCase() : "";
+
+    if (normalizedRole === "AGENT") {
+      setBackHref("/agent");
+    } else if (normalizedRole === "MERCHANT" || normalizedRole === "BUSINESS") {
+      setBackHref("/merchant");
+    } else if (normalizedRole === "BILLER") {
+      setBackHref("/biller");
+    } else {
+      setBackHref("/");
+    }
 
     if (!savedUserId || !token) {
       router.push("/login");
@@ -77,7 +95,6 @@ function SendMoneyContent(){
   function handleContinue() {
     if (!canContinue) return;
     
-    // Convert state to URL parameters to pass to the confirm-pin page
     const searchParams = new URLSearchParams({
       type: "Send Money",
       receiver: receiver,
@@ -93,8 +110,9 @@ function SendMoneyContent(){
     <div className="min-h-screen bg-gray-50 text-gray-900 transition-colors dark:bg-gray-900 dark:text-gray-100">
       <header className="border-b border-gray-200 bg-white/70 px-5 py-5 backdrop-blur md:px-10 dark:border-gray-800 dark:bg-gray-950/70">
         <div className="mx-auto flex max-w-5xl items-center gap-3">
+          {/* ডাইনামিক backHref ব্যবহার করা হলো */}
           <Link
-            href="/"
+            href={backHref}
             aria-label="Back to dashboard"
             className="rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
           >
@@ -258,7 +276,6 @@ function SendMoneyContent(){
         
       </div>
     </div>
-    
   );
 }
 

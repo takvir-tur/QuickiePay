@@ -47,6 +47,13 @@ const agentPrimaryActions = [
     icon: ArrowUpRight, 
     tone: "bg-blue-500" 
   },
+  { 
+    label: "Send Money", 
+    href: "/send-money", 
+    detail: "Transfer funds instantly", 
+    icon: ArrowUpRight, 
+    tone: "bg-purple-500" 
+  },
 ];
 
 export default function AgentDashboard() {
@@ -73,19 +80,20 @@ export default function AgentDashboard() {
     setMounted(true);
     const savedUserId = sessionStorage.getItem("userId");
     const token = sessionStorage.getItem("token");
+    const role = sessionStorage.getItem("role");
 
-    if (!savedUserId || !token) {
+    if (!savedUserId || !token || role !== "AGENT") {
       router.push("/login");
       return; 
     }
 
-    fetch(`http://localhost:5001/api/users/${savedUserId}`,{
-  method: "GET",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${token}`,
-  },
-})
+    fetch(`http://localhost:5001/api/agents/profile`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+    })
       .then((response) => {
         if (response.status === 401 || response.status === 403) {
           sessionStorage.clear();
@@ -287,23 +295,24 @@ export default function AgentDashboard() {
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Select an action to perform for customers</p>
             
             {/* Exactly 2 options: Cash In & Cash Out */}
-            <div className="mt-5 grid grid-cols-1 gap-6 sm:grid-cols-2 max-w-2xl">
-              {agentPrimaryActions.map(({ label, href, detail, icon: Icon, tone }) => (
-                <button
-                  key={label}
-                  onClick={() => router.push(href)}
-                  className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:border-emerald-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950 dark:hover:border-emerald-800"
-                >
-                  <div
-                    className={`mb-5 grid size-14 place-items-center rounded-2xl ${tone} text-white transition-transform duration-200 group-hover:scale-110`}
-                  >
-                    <Icon className="size-7" />
-                  </div>
-                  <p className="text-lg font-semibold tracking-tight">{label}</p>
-                  <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{detail}</p>
-                </button>
-              ))}
-            </div>
+            {/* 3টি অপশনের জন্য sm:grid-cols-3 এবং max-w-4xl করা হলো */}
+<div className="mt-5 grid grid-cols-1 gap-6 sm:grid-cols-3 max-w-4xl">
+  {agentPrimaryActions.map(({ label, href, detail, icon: Icon, tone }) => (
+    <button
+      key={label}
+      onClick={() => router.push(href)}
+      className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:border-emerald-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950 dark:hover:border-emerald-800"
+    >
+      <div
+        className={`mb-5 grid size-14 place-items-center rounded-2xl ${tone} text-white transition-transform duration-200 group-hover:scale-110`}
+      >
+        <Icon className="size-7" />
+      </div>
+      <p className="text-lg font-semibold tracking-tight">{label}</p>
+      <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{detail}</p>
+    </button>
+  ))}
+</div>
           </section>
 
           <footer className="mt-12 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
