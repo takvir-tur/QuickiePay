@@ -385,6 +385,12 @@ CREATE TABLE audit_logs
         ON DELETE SET NULL
 );
 
+CREATE TABLE system_settings (
+    setting_key VARCHAR(50) PRIMARY KEY,
+    setting_value NUMERIC(15,2) NOT NULL,
+    description VARCHAR(255)
+);
+
 -- Add approval tracking to Agents
 ALTER TABLE agents
 ADD COLUMN approved_by UUID,

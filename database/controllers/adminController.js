@@ -120,4 +120,115 @@ async function toggleUserStatus(req, res) {
   }
 }
 
-module.exports = { getAdminDashboardData, getAllUsers, toggleUserStatus };
+async function getGlobalLedger(req, res) {
+  try {
+    const ledger = await pool.query(`
+      SELECT 
+        t.transaction_id,
+        t.reference_no,
+        t.transaction_type,
+        t.amount,
+        t.fee,
+        t.transaction_status,
+        t.transaction_time,
+        su.full_name AS sender_name,
+        su.phone_number AS sender_phone,
+        ru.full_name AS receiver_name,
+        ru.phone_number AS receiver_phone
+      FROM transactions t
+      JOIN accounts sa ON t.sender_account_id = sa.account_id
+      JOIN users su ON sa.user_id = su.user_id
+      JOIN accounts ra ON t.receiver_account_id = ra.account_id
+      JOIN users ru ON ra.user_id = ru.user_id
+      ORDER BY t.transaction_time DESC
+    `);
+    
+    res.json(ledger.rows);
+  } catch (err) {
+    console.error('Error fetching global ledger:', err);
+    res.status(500).json({ error: 'Server error fetching global ledger' });
+  }
+}
+
+async function getFraudAlerts(req, res) {
+  try {
+    const alerts = await pool.query(`
+      SELECT 
+        t.transaction_id,
+        t.transaction_type,
+        t.amount,
+        t.transaction_time,
+        u.user_id,
+        u.full_name,
+        u.phone_number,
+        CASE 
+          WHEN t.amount >= 100000 THEN 'Velocity spike / High amount'
+          WHEN t.amount >= 50000 THEN 'Unusual transaction volume'
+          WHEN t.transaction_status = 'FAILED' THEN 'Suspicious failure'
+          ELSE 'System flagged'
+        END as reason,
+        CASE 
+          WHEN t.amount >= 100000 THEN 'high'
+          WHEN t.amount >= 50000 THEN 'medium'
+          ELSE 'low'
+        END as severity
+      FROM transactions t
+      JOIN accounts a ON t.sender_account_id = a.account_id
+      JOIN users u ON a.user_id = u.user_id
+      WHERE t.amount >= 50000 OR t.transaction_status = 'FAILED'
+      ORDER BY t.transaction_time DESC
+      LIMIT 50
+    `);
+    
+    res.json(alerts.rows);
+  } catch (err) {
+    console.error('Error fetching alerts:', err);
+    res.status(500).json({ error: 'Server error fetching alerts' });
+  }
+}
+
+// Fetch all system configurations
+async function getSystemSettings(req, res) {
+  try {
+    const settings = await pool.query('SELECT * FROM system_settings ORDER BY setting_key');
+    res.json(settings.rows);
+  } catch (err) {
+    console.error('Error fetching settings:', err);
+    res.status(500).json({ error: 'Server error fetching settings' });
+  }
+}
+
+// Update a specific system configuration
+async function updateSystemSetting(req, res) {
+  const { setting_key } = req.params;
+  const { setting_value } = req.body;
+
+  try {
+    const result = await pool.query(`
+      UPDATE system_settings 
+      SET setting_value = $1 
+      WHERE setting_key = $2 
+      RETURNING *
+    `, [setting_value, setting_key]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Setting key not found' });
+    }
+    
+    res.json({ message: 'Configuration updated successfully', setting: result.rows[0] });
+  } catch (err) {
+    console.error('Error updating setting:', err);
+    res.status(500).json({ error: 'Server error updating setting' });
+  }
+}
+
+// Ensure you export the new functions at the bottom!
+module.exports = { 
+  getAdminDashboardData, 
+  getAllUsers, 
+  toggleUserStatus, 
+  getGlobalLedger,
+  getFraudAlerts,
+  getSystemSettings,   
+  updateSystemSetting  
+};
