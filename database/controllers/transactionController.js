@@ -84,6 +84,573 @@ async function sendMoney(req, res) {
   }
 }
 
+// =====================================================
+// CASH IN
+// Agent gives digital money to customer
+// Customer balance + amount
+// Agent balance - amount
+// Commission = 0
+// =====================================================
+
+async function cashIn(req, res) {
+  const agentUserId = req.user.user_id;
+
+  const {
+    customer_phone,
+    amount,
+    pin,
+    note
+  } = req.body;
+
+  if (!customer_phone || !amount || !pin) {
+    return res.status(400).json({
+      error: 'Customer phone, amount and PIN are required'
+    });
+  }
+
+  const numericAmount = parseFloat(amount);
+
+  if (isNaN(numericAmount) || numericAmount <= 0) {
+    return res.status(400).json({
+      error: 'Amount must be greater than 0'
+    });
+  }
+
+  try {
+
+    // -------------------------------------------------
+    // 1. Verify that logged-in user is an AGENT
+    // -------------------------------------------------
+
+    const agentResult = await pool.query(`
+      SELECT
+        u.pin_hash,
+        a.account_id AS agent_account_id,
+        ag.agent_id,
+        ag.status
+      FROM users u
+      JOIN accounts a
+        ON u.user_id = a.user_id
+      JOIN agents ag
+        ON u.user_id = ag.user_id
+      WHERE u.user_id = $1
+    `, [agentUserId]);
+
+    if (agentResult.rows.length === 0) {
+      return res.status(403).json({
+        error: 'You are not registered as an agent'
+      });
+    }
+
+    const agent = agentResult.rows[0];
+
+    if (agent.status !== 'ACTIVE') {
+      return res.status(403).json({
+        error: 'Agent account is not active'
+      });
+    }
+
+    // -------------------------------------------------
+    // 2. Verify Agent PIN
+    // -------------------------------------------------
+
+    const isPinValid = await bcrypt.compare(
+      pin,
+      agent.pin_hash
+    );
+
+    if (!isPinValid) {
+      return res.status(401).json({
+        error: 'Invalid PIN'
+      });
+    }
+
+    // -------------------------------------------------
+    // 3. Find Customer
+    // -------------------------------------------------
+
+    const customerResult = await pool.query(`
+      SELECT
+        u.user_id,
+        u.full_name,
+        a.account_id,
+        a.balance
+      FROM users u
+      JOIN accounts a
+        ON u.user_id = a.user_id
+      WHERE u.phone_number = $1
+        AND a.account_type = 'PERSONAL'
+    `, [customer_phone]);
+
+    if (customerResult.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Customer not found'
+      });
+    }
+
+    const customer = customerResult.rows[0];
+
+    if (customer.account_id === agent.agent_account_id) {
+      return res.status(400).json({
+        error: 'You cannot cash in to your own account'
+      });
+    }
+
+    // -------------------------------------------------
+    // 4. Start DB Transaction
+    // -------------------------------------------------
+
+    await pool.query('BEGIN');
+
+    // Lock both accounts
+    const accountsToLock = [
+      agent.agent_account_id,
+      customer.account_id
+    ].sort();
+
+    await pool.query(
+      `SELECT balance
+       FROM accounts
+       WHERE account_id = $1
+       FOR UPDATE`,
+      [accountsToLock[0]]
+    );
+
+    await pool.query(
+      `SELECT balance
+       FROM accounts
+       WHERE account_id = $1
+       FOR UPDATE`,
+      [accountsToLock[1]]
+    );
+
+    // -------------------------------------------------
+    // 5. Check Agent Balance
+    // -------------------------------------------------
+
+    const balanceResult = await pool.query(`
+      SELECT balance
+      FROM accounts
+      WHERE account_id = $1
+    `, [agent.agent_account_id]);
+
+    const agentBalance =
+      parseFloat(balanceResult.rows[0].balance);
+
+    if (agentBalance < numericAmount) {
+      await pool.query('ROLLBACK');
+
+      return res.status(400).json({
+        error: 'Insufficient agent balance'
+      });
+    }
+
+    // -------------------------------------------------
+    // 6. Transfer Money
+    // -------------------------------------------------
+
+    // Agent balance decreases
+    await pool.query(`
+      UPDATE accounts
+      SET balance = balance - $1
+      WHERE account_id = $2
+    `, [
+      numericAmount,
+      agent.agent_account_id
+    ]);
+
+    // Customer balance increases
+    await pool.query(`
+      UPDATE accounts
+      SET balance = balance + $1
+      WHERE account_id = $2
+    `, [
+      numericAmount,
+      customer.account_id
+    ]);
+
+    // -------------------------------------------------
+    // 7. Create Main Transaction
+    // -------------------------------------------------
+
+    const referenceNo = `CIN${Date.now()}`;
+
+    const transactionResult = await pool.query(`
+      INSERT INTO transactions
+      (
+        reference_no,
+        transaction_type,
+        sender_account_id,
+        receiver_account_id,
+        amount,
+        fee,
+        transaction_status,
+        remarks
+      )
+      VALUES
+      (
+        $1,
+        'CASH_IN',
+        $2,
+        $3,
+        $4,
+        0,
+        'SUCCESS',
+        $5
+      )
+      RETURNING transaction_id
+    `, [
+      referenceNo,
+      agent.agent_account_id,
+      customer.account_id,
+      numericAmount,
+      note || null
+    ]);
+
+    const transactionId =
+      transactionResult.rows[0].transaction_id;
+
+    // -------------------------------------------------
+    // 8. Create Cash Transaction Record
+    // -------------------------------------------------
+
+    await pool.query(`
+      INSERT INTO cash_transactions
+      (
+        transaction_id,
+        agent_id,
+        cash_type,
+        commission
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        'CASH_IN',
+        0
+      )
+    `, [
+      transactionId,
+      agent.agent_id
+    ]);
+
+    await pool.query('COMMIT');
+
+    res.status(200).json({
+      message: 'Cash In successful',
+      referenceNo,
+      customer: customer.full_name,
+      amount: numericAmount,
+      commission: 0
+    });
+
+  } catch (err) {
+
+    await pool.query('ROLLBACK');
+
+    console.error('Cash In Error:', err.message);
+
+    res.status(500).json({
+      error: 'Cash In transaction failed'
+    });
+  }
+}
+
+
+// =====================================================
+// CASH OUT
+// Customer gives digital money to agent
+// Customer balance - (amount + commission)
+// Agent balance + amount
+// Agent earns commission
+// =====================================================
+
+async function cashOut(req, res) {
+  const agentUserId = req.user.user_id;
+
+  const {
+    customer_phone,
+    amount,
+    pin,
+    note
+  } = req.body;
+
+  if (!customer_phone || !amount || !pin) {
+    return res.status(400).json({
+      error: 'Customer phone, amount and PIN are required'
+    });
+  }
+
+  const numericAmount = parseFloat(amount);
+
+  if (isNaN(numericAmount) || numericAmount <= 0) {
+    return res.status(400).json({
+      error: 'Amount must be greater than 0'
+    });
+  }
+
+  try {
+
+    // -------------------------------------------------
+    // 1. Get Agent + Commission Rate
+    // -------------------------------------------------
+
+    const agentResult = await pool.query(`
+      SELECT
+        u.pin_hash,
+        a.account_id AS agent_account_id,
+        ag.agent_id,
+        ag.commission_rate,
+        ag.status
+      FROM users u
+      JOIN accounts a
+        ON u.user_id = a.user_id
+      JOIN agents ag
+        ON u.user_id = ag.user_id
+      WHERE u.user_id = $1
+    `, [agentUserId]);
+
+    if (agentResult.rows.length === 0) {
+      return res.status(403).json({
+        error: 'You are not registered as an agent'
+      });
+    }
+
+    const agent = agentResult.rows[0];
+
+    if (agent.status !== 'ACTIVE') {
+      return res.status(403).json({
+        error: 'Agent account is not active'
+      });
+    }
+
+    // -------------------------------------------------
+    // 2. Verify Agent PIN
+    // -------------------------------------------------
+
+    const isPinValid = await bcrypt.compare(
+      pin,
+      agent.pin_hash
+    );
+
+    if (!isPinValid) {
+      return res.status(401).json({
+        error: 'Invalid PIN'
+      });
+    }
+
+    // -------------------------------------------------
+    // 3. Find Customer
+    // -------------------------------------------------
+
+    const customerResult = await pool.query(`
+      SELECT
+        u.user_id,
+        u.full_name,
+        a.account_id,
+        a.balance
+      FROM users u
+      JOIN accounts a
+        ON u.user_id = a.user_id
+      WHERE u.phone_number = $1
+        AND a.account_type = 'PERSONAL'
+    `, [customer_phone]);
+
+    if (customerResult.rows.length === 0) {
+      return res.status(404).json({
+        error: 'Customer not found'
+      });
+    }
+
+    const customer = customerResult.rows[0];
+
+    if (customer.account_id === agent.agent_account_id) {
+      return res.status(400).json({
+        error: 'You cannot cash out from your own account'
+      });
+    }
+
+    // -------------------------------------------------
+    // 4. Calculate Commission
+    // -------------------------------------------------
+
+    const commissionRate =
+      parseFloat(agent.commission_rate) || 0;
+
+    const commission =
+      numericAmount * commissionRate / 100;
+
+    const totalDeduction =
+      numericAmount + commission;
+
+    // -------------------------------------------------
+    // 5. Start Transaction
+    // -------------------------------------------------
+
+    await pool.query('BEGIN');
+
+    // Lock both accounts
+    const accountsToLock = [
+      agent.agent_account_id,
+      customer.account_id
+    ].sort();
+
+    await pool.query(
+      `SELECT balance
+       FROM accounts
+       WHERE account_id = $1
+       FOR UPDATE`,
+      [accountsToLock[0]]
+    );
+
+    await pool.query(
+      `SELECT balance
+       FROM accounts
+       WHERE account_id = $1
+       FOR UPDATE`,
+      [accountsToLock[1]]
+    );
+
+    // -------------------------------------------------
+    // 6. Check Customer Balance
+    // -------------------------------------------------
+
+    const balanceResult = await pool.query(`
+      SELECT balance
+      FROM accounts
+      WHERE account_id = $1
+    `, [customer.account_id]);
+
+    const customerBalance =
+      parseFloat(balanceResult.rows[0].balance);
+
+    if (customerBalance < totalDeduction) {
+      await pool.query('ROLLBACK');
+
+      return res.status(400).json({
+        error: `Insufficient balance. Required: ৳${totalDeduction.toFixed(2)}`
+      });
+    }
+
+    // -------------------------------------------------
+    // 7. Customer Balance Decrease
+    // Amount + Commission
+    // -------------------------------------------------
+
+    await pool.query(`
+      UPDATE accounts
+      SET balance = balance - $1
+      WHERE account_id = $2
+    `, [
+      totalDeduction,
+      customer.account_id
+    ]);
+
+    // -------------------------------------------------
+    // 8. Agent Balance Increase
+    // Only cash amount
+    // -------------------------------------------------
+
+    await pool.query(`
+      UPDATE accounts
+      SET balance = balance + $1
+      WHERE account_id = $2
+    `, [
+      numericAmount,
+      agent.agent_account_id
+    ]);
+
+    // -------------------------------------------------
+    // 9. Main Transaction
+    // -------------------------------------------------
+
+    const referenceNo = `COUT${Date.now()}`;
+
+    const transactionResult = await pool.query(`
+      INSERT INTO transactions
+      (
+        reference_no,
+        transaction_type,
+        sender_account_id,
+        receiver_account_id,
+        amount,
+        fee,
+        transaction_status,
+        remarks
+      )
+      VALUES
+      (
+        $1,
+        'CASH_OUT',
+        $2,
+        $3,
+        $4,
+        $5,
+        'SUCCESS',
+        $6
+      )
+      RETURNING transaction_id
+    `, [
+      referenceNo,
+      customer.account_id,
+      agent.agent_account_id,
+      numericAmount,
+      commission,
+      note || null
+    ]);
+
+    const transactionId =
+      transactionResult.rows[0].transaction_id;
+
+    // -------------------------------------------------
+    // 10. Cash Transaction
+    // -------------------------------------------------
+
+    await pool.query(`
+      INSERT INTO cash_transactions
+      (
+        transaction_id,
+        agent_id,
+        cash_type,
+        commission
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        'CASH_OUT',
+        $3
+      )
+    `, [
+      transactionId,
+      agent.agent_id,
+      commission
+    ]);
+
+    await pool.query('COMMIT');
+
+    res.status(200).json({
+      message: 'Cash Out successful',
+      referenceNo,
+      customer: customer.full_name,
+      amount: numericAmount,
+      commission: commission.toFixed(2),
+      totalDeduction: totalDeduction.toFixed(2)
+    });
+
+  } catch (err) {
+
+    await pool.query('ROLLBACK');
+
+    console.error('Cash Out Error:', err.message);
+
+    res.status(500).json({
+      error: 'Cash Out transaction failed'
+    });
+  }
+}
+
+
 async function getTransactionHistory(req, res) {
   const userId = req.user.user_id; // From verifyToken middleware
 
@@ -125,4 +692,4 @@ async function getTransactionHistory(req, res) {
   }
 }
 
-module.exports = { sendMoney, getTransactionHistory };
+module.exports = { sendMoney,cashOut,cashIn, getTransactionHistory };

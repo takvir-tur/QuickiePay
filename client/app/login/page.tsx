@@ -32,14 +32,28 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok) {
-        //session storage ensuring closing and reopening browser requires login again
-        sessionStorage.setItem('token', data.token);
-        sessionStorage.setItem('userId', data.user.user_id);
-        sessionStorage.setItem("role", data.user.role);
-        sessionStorage.setItem('user', JSON.stringify(data.user));
-        
-        router.push('/'); //[cite: 3]
-      } else {
+
+  sessionStorage.setItem('token', data.token);
+  sessionStorage.setItem('userId', data.user.user_id);
+  sessionStorage.setItem('role', data.user.role);
+  sessionStorage.setItem('user', JSON.stringify(data.user));
+
+  if (data.user.role === 'AGENT') {
+    router.push('/agent');
+  }
+  else if (data.user.role === 'BUSINESS') {
+    router.push('/merchant');
+  }
+  else if (data.user.role === 'BILLER') {
+    router.push('/biller');
+  }
+  else if (data.user.role === 'ADMIN') {
+    router.push('/admin');
+  }
+  else {
+    router.push('/');
+  }
+} else {
         setMessage(`Error: ${data.error}`);
       }
     } catch (err) {

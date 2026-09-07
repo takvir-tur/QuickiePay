@@ -9,7 +9,7 @@ export default function RegisterPage() {
   const [formData, setFormData] = useState({ 
     full_name: '', phone_number: '', email: '', pin: '', confirm_pin: '', 
     national_id: '', account_type: 'PERSONAL', 
-    business_name: '', trade_license: '', organization_name: '', service_name: 'ELECTRICITY'
+    business_name: '', trade_license: '', organization_name: '', service_name: 'ELECTRICITY',commission_rate:''
   }); //[cite: 4]
   
   const [message, setMessage] = useState<string>('');
@@ -132,9 +132,35 @@ export default function RegisterPage() {
               {(formData.account_type === 'AGENT' || formData.account_type === 'BUSINESS') && (
                 <div className="mt-4">
                   <label className={labelClass}>Business Name</label>
-                  <input type="text" name="business_name" onChange={handleChange} required className={inputClass} />
+                  <input type="text" name="business_name" value={formData.business_name} onChange={handleChange} required className={inputClass} />
                 </div>
               )}
+
+              {/* AGENT CASH OUT CHARGE */}
+{formData.account_type === 'AGENT' && (
+  <div className="mt-4">
+    <label className={labelClass}>
+      Cash Out Charge (%)
+    </label>
+
+    <input
+      type="number"
+      name="commission_rate"
+      min="0"
+      max="100"
+      step="0.01"
+      value={formData.commission_rate}
+      onChange={handleChange}
+      placeholder="Example: 1.50"
+      required
+      className={inputClass}
+    />
+
+    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+      Set the percentage you want to charge for cash out.
+    </p>
+  </div>
+)}
 
               {/* BUSINESS-ONLY CONDITIONAL */}
               {formData.account_type === 'BUSINESS' && ( //[cite: 4]
