@@ -5,7 +5,6 @@ async function getUserById(req, res) {
   const { id } = req.params;
 
   try {
-    // 1. Get the user's core data
     const userResult = await pool.query(`
       SELECT u.user_id, u.full_name, u.phone_number, a.balance, a.account_id 
       FROM users u
@@ -19,7 +18,7 @@ async function getUserById(req, res) {
 
     const user = userResult.rows[0];
 
-    // 2. Fetch Unique Quick Actions using a CTE (Common Table Expression)
+    // Quick Actions
     const recentActions = await pool.query(`
       WITH RecentTx AS (
         SELECT DISTINCT ON (t.receiver_account_id)
@@ -37,7 +36,6 @@ async function getUserById(req, res) {
       SELECT * FROM RecentTx ORDER BY transaction_time DESC LIMIT 4;
     `, [user.account_id]);
 
-    // Attach the actions to the response
     user.quickActions = recentActions.rows;
 
     res.json(user);

@@ -84,4 +84,45 @@ async function sendMoney(req, res) {
   }
 }
 
-module.exports = { sendMoney };
+async function getTransactionHistory(req, res) {
+  const userId = req.user.user_id; // From verifyToken middleware
+
+  try {
+    // This query grabs the user's account_id, then finds all transactions where 
+    // they are either the sender OR the receiver, dynamically labeling it.
+    const result = await pool.query(`
+      SELECT 
+        t.reference_no AS id,
+        CASE 
+          WHEN t.receiver_account_id = (SELECT account_id FROM accounts WHERE user_id = $1) THEN 'RECEIVED'
+          ELSE t.transaction_type::text 
+        END AS type,
+        u.full_name AS "receiverName",
+        u.phone_number AS "receiverPhone",
+        t.amount,
+        t.transaction_time AS date,
+        t.transaction_status AS status,
+        t.remarks AS note,
+        0 AS fee 
+      FROM transactions t
+      -- Join accounts and users to get the details of the OTHER person in the transaction
+      JOIN accounts a ON (
+        CASE 
+          WHEN t.sender_account_id = (SELECT account_id FROM accounts WHERE user_id = $1) THEN t.receiver_account_id
+          ELSE t.sender_account_id
+        END = a.account_id
+      )
+      JOIN users u ON a.user_id = u.user_id
+      WHERE t.sender_account_id = (SELECT account_id FROM accounts WHERE user_id = $1)
+         OR t.receiver_account_id = (SELECT account_id FROM accounts WHERE user_id = $1)
+      ORDER BY t.transaction_time DESC
+    `, [userId]);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching history:', err.message);
+    res.status(500).json({ error: 'Failed to fetch transaction history' });
+  }
+}
+
+module.exports = { sendMoney, getTransactionHistory };

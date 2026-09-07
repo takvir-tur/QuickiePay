@@ -102,7 +102,7 @@ async function registerUser(req, res) {
   }
 }
 
-// LOGIN USER (JWT Token Added)
+// LOGIN USER (JWT Token Added) + admin
 async function loginUser(req, res) {
   const { phone_number, pin } = req.body;
 
@@ -111,7 +111,13 @@ async function loginUser(req, res) {
   }
 
   try {
-    const result = await pool.query('SELECT * FROM users WHERE phone_number = $1', [phone_number]);
+    // 1. LEFT JOIN the admins table to check if this user has special privileges
+    const result = await pool.query(`
+      SELECT u.*, a.role AS admin_role, a.permission_level 
+      FROM users u
+      LEFT JOIN admins a ON u.user_id = a.user_id
+      WHERE u.phone_number = $1
+    `, [phone_number]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
@@ -124,14 +130,19 @@ async function loginUser(req, res) {
       return res.status(401).json({ error: 'Invalid PIN' });
     }
 
-    // <-- 2. Token Create Kora Hoise (Valid for 7 days)
+    // 2. Inject admin data into the JWT payload
     const token = jwt.sign(
-      { user_id: user.user_id, phone: user.phone_number },
+      { 
+        user_id: user.user_id, 
+        phone: user.phone_number,
+        role: user.admin_role || 'USER', // Defaults to 'USER' if not in admins table
+        permission_level: user.permission_level || 0 
+      },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    // <-- 3. Response-e Token Pathano Hoise
+    // 3. Send the role back in the response so the frontend can route to the admin panel
     res.json({
       message: 'Login successful! 🚀',
       token: token,
@@ -140,6 +151,8 @@ async function loginUser(req, res) {
         full_name: user.full_name,
         phone_number: user.phone_number,
         email: user.email,
+        role: user.admin_role || 'USER',
+        permission_level: user.permission_level || 0
       },
     });
   } catch (err) {

@@ -2,6 +2,7 @@
 import { useTheme } from "next-themes";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { ShieldAlert } from "lucide-react";
 import {
   ArrowUpRight,
   Bell,
@@ -32,7 +33,7 @@ import {
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
-  { label: "Transactions", icon: ArrowUpRight },
+  { label: "Transactions", href: "/transactions", icon: ArrowUpRight },
   { label: "Notifications", icon: Bell },
   { label: "Statistics", icon: BarChart3 },
 ];
@@ -64,6 +65,8 @@ const offers = [
   { title: "Refer & earn $10", detail: "For every friend who joins QuickiePay.", tag: "Rewards", icon: Gift, tone: "bg-green-500" },
 ];
 
+const [userRole, setUserRole] = useState("USER");
+
 export default function App() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -90,6 +93,9 @@ export default function App() {
     const savedUserId = sessionStorage.getItem("userId");
     const token = sessionStorage.getItem("token");
 
+    const storedRole = sessionStorage.getItem("role") || "USER";
+    setUserRole(storedRole);
+
     if (!savedUserId || !token) {
       router.push("/login");
       return; 
@@ -106,7 +112,7 @@ export default function App() {
         if (response.status === 401 || response.status === 403) {
           sessionStorage.clear();
           router.push("/login");
-          throw new Error("Unauthorized");
+          return Promise.reject("Unauthorized");
         }
         return response.json();
       })
@@ -176,10 +182,15 @@ export default function App() {
             </p>
           )}
           <nav className={`flex flex-col gap-1 ${collapsed ? "mt-8" : ""}`}>
-            {navItems.map(({ label, icon: Icon }) => (
+            {navItems.map(({ label, href, icon: Icon }) => (
               <button
                 key={label}
-                onClick={() => setActiveNav(label)}
+                onClick={() => {
+                  setActiveNav(label);
+                  if (href && href !== "#") {
+                    router.push(href);
+                  }
+                }}
                 title={label}
                 className={`flex items-center gap-3 rounded-xl py-3 text-sm font-medium transition-colors ${
                   collapsed ? "justify-center px-0" : "px-3"
@@ -193,6 +204,21 @@ export default function App() {
                 {!collapsed && label}
               </button>
             ))}
+            {/* ONLY render this link if the user has admin privileges */}
+            {userRole !== "USER" && (
+              <>
+                <div className="my-2 border-t border-gray-200 dark:border-gray-800" />
+                <button
+                  onClick={() => router.push("/admin")}
+                  className={`flex items-center gap-3 rounded-xl py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-500 dark:hover:bg-red-950/30 ${
+                    collapsed ? "justify-center px-0" : "px-3"
+                  }`}
+                >
+                  <ShieldAlert className="size-[18px] shrink-0" />
+                  {!collapsed && "Admin Portal"}
+                </button>
+              </>
+            )}
           </nav>
 
           {!collapsed && (

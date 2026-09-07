@@ -35,6 +35,7 @@ export default function LoginPage() {
         //session storage ensuring closing and reopening browser requires login again
         sessionStorage.setItem('token', data.token);
         sessionStorage.setItem('userId', data.user.user_id);
+        sessionStorage.setItem("role", data.user.role);
         sessionStorage.setItem('user', JSON.stringify(data.user));
         
         router.push('/'); //[cite: 3]
