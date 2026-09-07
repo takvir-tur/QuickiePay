@@ -19,4 +19,12 @@ function verifyToken(req, res, next) {
   }
 }
 
-module.exports = verifyToken;
+const verifyAdmin = (req, res, next) => {
+  // req.user is set by your verifyToken middleware
+  if (!req.user || req.user.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ error: 'Access denied. Super Admin privileges required.' });
+  }
+  next(); 
+};
+
+module.exports = { verifyToken, verifyAdmin };

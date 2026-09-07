@@ -65,9 +65,10 @@ const offers = [
   { title: "Refer & earn $10", detail: "For every friend who joins QuickiePay.", tag: "Rewards", icon: Gift, tone: "bg-green-500" },
 ];
 
-const [userRole, setUserRole] = useState("USER");
+
 
 export default function App() {
+  const [userRole, setUserRole] = useState("USER");
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
