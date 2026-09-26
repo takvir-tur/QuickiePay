@@ -133,7 +133,7 @@ export default function CashOutPage() {
             <div>
 
               <label className="mb-2 block text-sm font-medium">
-                Customer Phone Number
+                Agent Phone Number
               </label>
 
               <div className="relative">

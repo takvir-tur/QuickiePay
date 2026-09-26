@@ -46,7 +46,7 @@ const manageItems = [
 const primaryActions = [
   { label: "Send Money", href: "/send-money", detail: "To friends & family", icon: ArrowUpRight, tone: "bg-blue-500" },
   { label: "Mobile Recharge", href: "#", detail: "Any operator, instantly", icon: Smartphone, tone: "bg-orange-500" },
-  { label: "Cash Out", href: "#", detail: "Agent or ATM", icon: HandCoins, tone: "bg-green-500" },
+  { label: "Cash Out", href: "/agent/cash_out", detail: "Agent or ATM", icon: HandCoins, tone: "bg-green-500" },
   { label: "Pay Bill", href: "#", detail: "Utilities & more", icon: Receipt, tone: "bg-purple-500" },
   { label: "Make Payment", href: "#", detail: "Shops & merchants", icon: CreditCard, tone: "bg-pink-500" },
 ];

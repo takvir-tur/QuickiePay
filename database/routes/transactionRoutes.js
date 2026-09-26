@@ -1,7 +1,5 @@
 const express = require('express');
 const router = express.Router();
-
-// ✅ সঠিক নিয়ম: সেকেন্ড ব্রাকেট দিয়ে ইমপোর্ট করো
 const { verifyToken } = require('../middleware/authMiddleware');
 
 const { 
