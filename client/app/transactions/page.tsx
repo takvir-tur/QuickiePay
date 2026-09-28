@@ -59,13 +59,29 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [backHref, setBackHref] = useState("/");
 
   useEffect(() => {
     const token = sessionStorage.getItem("token");
+    const role = sessionStorage.getItem("role");
+
     if (!token) {
       router.push("/login");
       return;
     }
+
+    const normalizedRole = role ? role.toUpperCase() : "";
+
+    if (normalizedRole === "AGENT") {
+      setBackHref("/agent");
+    } else if (normalizedRole === "MERCHANT" || normalizedRole === "BUSINESS") {
+      setBackHref("/merchant");
+    } else if (normalizedRole === "BILLER") {
+      setBackHref("/biller");
+    } else {
+      setBackHref("/");
+    }
+
 
     // Fetch the real transaction history
     fetch("http://localhost:5001/api/transactions/history", {
@@ -117,7 +133,7 @@ export default function TransactionsPage() {
       <header className="border-b border-gray-200 bg-white/70 px-5 py-5 backdrop-blur md:px-10 dark:border-gray-800 dark:bg-gray-950/70">
         <div className="mx-auto flex max-w-3xl items-center gap-3">
           <Link
-            href="/"
+            href={backHref}
             aria-label="Back to dashboard"
             className="rounded-xl p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
           >

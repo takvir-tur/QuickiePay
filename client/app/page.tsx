@@ -28,8 +28,10 @@ import {
   Ticket,
   Wallet,
   Zap,
-  LogOut
+  LogOut,
+  QrCode
 } from "lucide-react";
+import QrScannerModal from "@/components/QrScannerModal";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
@@ -45,10 +47,11 @@ const manageItems = [
 
 const primaryActions = [
   { label: "Send Money", href: "/send-money", detail: "To friends & family", icon: ArrowUpRight, tone: "bg-blue-500" },
+  { label: "Make Payment", href: "/make-payment", detail: "Shops & merchants", icon: CreditCard, tone: "bg-pink-500" },
+  { label: "Scan QR", href: "#", isQr: true, detail: "Pay via merchant QR", icon: QrCode, tone: "bg-rose-500" },
+  { label: "Cash Out", href: "/cash_out", detail: "Agent or ATM", icon: HandCoins, tone: "bg-green-500" },
+  { label: "Pay Bill", href: "/pay-bill", detail: "Utilities & more", icon: Receipt, tone: "bg-purple-500" },
   { label: "Mobile Recharge", href: "#", detail: "Any operator, instantly", icon: Smartphone, tone: "bg-orange-500" },
-  { label: "Cash Out", href: "#", detail: "Agent or ATM", icon: HandCoins, tone: "bg-green-500" },
-  { label: "Pay Bill", href: "#", detail: "Utilities & more", icon: Receipt, tone: "bg-purple-500" },
-  { label: "Make Payment", href: "#", detail: "Shops & merchants", icon: CreditCard, tone: "bg-pink-500" },
 ];
 
 const quickActions = [
@@ -74,6 +77,7 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [balanceVisible, setBalanceVisible] = useState(false);
   const [activeNav, setActiveNav] = useState("Dashboard");
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   const router = useRouter();
 
@@ -231,7 +235,13 @@ export default function App() {
             {manageItems.map(({ label, icon: Icon }) => (
               <button
                 key={label}
-                onClick={() => setActiveNav(label)}
+                onClick={() => {
+                  if (label === "Settings") {
+                    router.push("/settings");
+                  } else {
+                    setActiveNav(label);
+                  }
+                }}
                 title={label}
                 className={`flex items-center gap-3 rounded-xl py-3 text-sm font-medium transition-colors ${
                   collapsed ? "justify-center px-0" : "px-3"
@@ -291,6 +301,15 @@ export default function App() {
             </div>
             <div className="flex items-center gap-2 md:gap-3">
               <button
+                onClick={() => setIsScannerOpen(true)}
+                title="Scan Merchant QR"
+                className="flex items-center gap-1.5 rounded-xl border border-pink-200 bg-pink-50 px-3 py-2 text-xs font-semibold text-pink-700 transition hover:bg-pink-100 dark:border-pink-900/50 dark:bg-pink-950/40 dark:text-pink-300"
+              >
+                <QrCode className="size-4 text-pink-600 dark:text-pink-400" />
+                <span className="hidden sm:inline">Scan QR</span>
+              </button>
+
+              <button
                 className="rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
                 aria-label="Notifications"
               >
@@ -318,22 +337,26 @@ export default function App() {
             <section>
               <h2 className="text-lg font-semibold tracking-tight">What would you like to do?</h2>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Your most used QuickiePay services</p>
-              <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-                {primaryActions.map(({ label, href, detail, icon: Icon, tone }) => (
-                  <button
-                    key={label}
-                    onClick={() => router.push(href)} //wires button
-                    className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:border-blue-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950 dark:hover:border-blue-800"
-                  >
-                    <div
-                      className={`mb-5 grid size-14 place-items-center rounded-2xl ${tone} text-white transition-transform duration-200 group-hover:scale-110`}
+              <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+                {primaryActions.map((action) => {
+                  const { label, href, detail, icon: Icon, tone } = action;
+                  const isQr = (action as any).isQr;
+                  return (
+                    <button
+                      key={label}
+                      onClick={() => isQr ? setIsScannerOpen(true) : router.push(href)}
+                      className="group rounded-3xl border border-gray-200 bg-white p-5 text-left transition-all duration-200 hover:-translate-y-1 hover:border-blue-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950 dark:hover:border-blue-800"
                     >
-                      <Icon className="size-7" />
-                    </div>
-                    <p className="text-base font-semibold tracking-tight">{label}</p>
-                    <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{detail}</p>
-                  </button>
-                ))}
+                      <div
+                        className={`mb-4 grid size-12 place-items-center rounded-2xl ${tone} text-white transition-transform duration-200 group-hover:scale-110`}
+                      >
+                        <Icon className="size-6" />
+                      </div>
+                      <p className="text-sm font-semibold tracking-tight">{label}</p>
+                      <p className="mt-1 text-xs leading-4 text-gray-500 dark:text-gray-400">{detail}</p>
+                    </button>
+                  );
+                })}
               </div>
             </section>
 
@@ -407,6 +430,11 @@ export default function App() {
               <Wallet className="size-4" /> QuickiePay · secured wallet
             </footer>
           </div>
+
+          <QrScannerModal
+            isOpen={isScannerOpen}
+            onClose={() => setIsScannerOpen(false)}
+          />
         </main>
       </div>
   );

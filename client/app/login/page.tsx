@@ -33,10 +33,11 @@ export default function LoginPage() {
 
       if (res.ok) {
 
-  sessionStorage.setItem('token', data.token);
-  sessionStorage.setItem('userId', data.user.user_id);
-  sessionStorage.setItem('role', data.user.role);
-  sessionStorage.setItem('user', JSON.stringify(data.user));
+sessionStorage.setItem("token", data.token);
+sessionStorage.setItem("userId", data.user.user_id);
+sessionStorage.setItem("role", data.user.role);
+sessionStorage.setItem("accountType", data.user.account_type);
+sessionStorage.setItem("user", JSON.stringify(data.user));
 
   if (data.user.role === 'AGENT') {
     router.push('/agent');

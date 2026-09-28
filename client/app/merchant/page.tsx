@@ -26,14 +26,16 @@ import {
   Zap,
   LogOut,
   Store,
-  FileSpreadsheet
+  FileSpreadsheet,
+  QrCode,
+  Package
 } from "lucide-react";
 
 const navItems = [
-  { label: "Dashboard", icon: LayoutDashboard },
+  { label: "Dashboard", href: "/merchant", icon: LayoutDashboard },
   { label: "Transactions", href: "/merchant/transactions", icon: ArrowDownRight },
-  { label: "Invoices", href: "/merchant/invoices", icon: FileText },
-  { label: "Statistics", icon: BarChart3 },
+  { label: "Invoices", href: "/merchant/invoices", icon: FileSpreadsheet },
+  { label: "Store", href: "/merchant/store", icon: Package },
 ];
 
 const manageItems = [
@@ -173,7 +175,13 @@ export default function MerchantDashboard() {
           {manageItems.map(({ label, icon: Icon }) => (
             <button
               key={label}
-              onClick={() => setActiveNav(label)}
+              onClick={() => {
+                if (label === "Settings") {
+                  router.push("/settings");
+                } else {
+                  setActiveNav(label);
+                }
+              }}
               className={`flex items-center gap-3 rounded-xl py-3 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 ${
                 collapsed ? "justify-center px-0" : "px-3"
               }`}
@@ -259,6 +267,32 @@ export default function MerchantDashboard() {
         </div>
         <p className="text-base font-semibold">Cash Out</p>
         <p className="mt-1 text-xs text-gray-500">Withdraw via agent or ATM</p>
+      </button>
+
+      {/* All Invoices */}
+      <button onClick={() => router.push("/merchant/invoices")} className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all hover:-translate-y-1 hover:border-pink-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
+        <div className="mb-5 grid size-14 place-items-center rounded-2xl bg-amber-500 text-white">
+          <FileText className="size-7" />
+        </div>
+        <p className="text-base font-semibold">Invoices List</p>
+        <p className="mt-1 text-xs text-gray-500">Track & copy payment links</p>
+      </button>
+
+      {/* Store & Products */}
+      <button onClick={() => router.push("/merchant/store")} className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all hover:-translate-y-1 hover:border-pink-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
+        <div className="mb-5 grid size-14 place-items-center rounded-2xl bg-indigo-500 text-white">
+          <Package className="size-7" />
+        </div>
+        <p className="text-base font-semibold">Store Catalog</p>
+        <p className="mt-1 text-xs text-gray-500">Inventory & product pricing</p>
+      </button>
+
+      <button onClick={() => router.push("/merchant/generate-qr")} className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all hover:-translate-y-1 hover:border-pink-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
+        <div className="mb-5 grid size-14 place-items-center rounded-2xl bg-pink-500 text-white">
+          <QrCode className="size-7" />
+        </div>
+        <p className="text-base font-semibold">Generate QR</p>
+        <p className="mt-1 text-xs text-gray-500">Get paid by any customer</p>
       </button>
 
     </div>

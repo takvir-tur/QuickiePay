@@ -20,14 +20,15 @@ import {
   LogOut,
   Zap,
   ArrowUpRight,
-  HandCoins
+  HandCoins,
+  Building2
 } from "lucide-react";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Bills Issued", href: "/biller/bills", icon: Receipt },
   { label: "Services", href: "/biller/services", icon: Zap },
-  { label: "Statistics", icon: BarChart3 },
+  { label: "Bank Transfer", href: "/biller/bank-transfer", icon: Building2 },
 ];
 
 export default function BillerDashboard() {
@@ -95,6 +96,13 @@ export default function BillerDashboard() {
               {!collapsed && label}
             </button>
           ))}
+          <button
+            onClick={() => router.push("/settings")}
+            className={`flex items-center gap-3 rounded-xl py-3 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 ${collapsed ? "justify-center px-0" : "px-3"}`}
+          >
+            <Settings className="size-[18px] shrink-0" />
+            {!collapsed && "Settings"}
+          </button>
         </nav>
         <button onClick={handleLogout} className="mt-auto flex items-center gap-3 rounded-xl py-3 text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-500 px-3">
           <LogOut className="size-[18px] shrink-0" />
@@ -109,17 +117,32 @@ export default function BillerDashboard() {
             <p className="text-xl font-semibold tracking-tight text-purple-600 dark:text-purple-500 mt-2">
               {balanceVisible ? `৳ ${billerData.balance}` : "••••••"}
             </p>
+            <button
+                onClick={() => setBalanceVisible(!balanceVisible)}
+                aria-label={balanceVisible ? "Hide balance" : "Show balance"}
+                className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+              >
+                {balanceVisible ? "Hide" : "Show"}
+              </button>
           </div>
         </header>
 
         <div className="mx-auto max-w-[1380px] px-5 py-8 md:px-10">
-  
   
   <section className="mb-10">
     <h2 className="text-lg font-semibold tracking-tight">Quick Actions</h2>
     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Perform quick financial transactions</p>
     <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
       
+      {/* Bank Transfer */}
+      <button onClick={() => router.push("/biller/bank-transfer")} className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all hover:-translate-y-1 hover:border-purple-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
+        <div className="mb-5 grid size-14 place-items-center rounded-2xl bg-emerald-500 text-white">
+          <Building2 className="size-7" />
+        </div>
+        <p className="text-base font-semibold">Transfer to Bank</p>
+        <p className="mt-1 text-xs text-gray-500">Payout funds to bank account</p>
+      </button>
+
       <button onClick={() => router.push("/send-money")} className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all hover:-translate-y-1 hover:border-purple-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
         <div className="mb-5 grid size-14 place-items-center rounded-2xl bg-blue-500 text-white">
           <ArrowUpRight className="size-7" />
@@ -128,12 +151,28 @@ export default function BillerDashboard() {
         <p className="mt-1 text-xs text-gray-500">Transfer funds</p>
       </button>
 
-      <button onClick={() => router.push("/cash-out")} className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all hover:-translate-y-1 hover:border-purple-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
+      <button onClick={() => router.push("/cash_out")} className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all hover:-translate-y-1 hover:border-purple-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
         <div className="mb-5 grid size-14 place-items-center rounded-2xl bg-green-500 text-white">
           <HandCoins className="size-7" />
         </div>
         <p className="text-base font-semibold">Cash Out</p>
         <p className="mt-1 text-xs text-gray-500">Withdraw cash</p>
+      </button>
+
+      <button onClick={() => router.push("/biller/bills")} className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all hover:-translate-y-1 hover:border-purple-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
+        <div className="mb-5 grid size-14 place-items-center rounded-2xl bg-purple-500 text-white">
+          <Receipt className="size-7" />
+        </div>
+        <p className="text-base font-semibold">Bills Issued</p>
+        <p className="mt-1 text-xs text-gray-500">View bill collections</p>
+      </button>
+
+      <button onClick={() => router.push("/biller/services")} className="group rounded-3xl border border-gray-200 bg-white p-6 text-left transition-all hover:-translate-y-1 hover:border-purple-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-950">
+        <div className="mb-5 grid size-14 place-items-center rounded-2xl bg-amber-500 text-white">
+          <Zap className="size-7" />
+        </div>
+        <p className="text-base font-semibold">Services</p>
+        <p className="mt-1 text-xs text-gray-500">Manage billing services</p>
       </button>
 
     </div>

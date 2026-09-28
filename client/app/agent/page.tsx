@@ -22,8 +22,8 @@ import {
 
 const agentNavItems = [
   { label: "Dashboard", href: "/agent", icon: LayoutDashboard },
-  { label: "Cash In", href: "/agent/cash-in", icon: ArrowDownRight },
-  { label: "Cash Out", href: "/agent/cash-out", icon: ArrowUpRight },
+  { label: "Cash In", href: "/cash_in", icon: ArrowDownRight },
+  { label: "Cash Out", href: "/cash_out", icon: ArrowUpRight },
   { label: "Transactions", href: "/transactions", icon: HandCoins },
 ];
 
@@ -35,14 +35,14 @@ const manageItems = [
 const agentPrimaryActions = [
   { 
     label: "Cash In", 
-    href: "/agent/cash_in", 
+    href: "/cash_in", 
     detail: "Deposit money to user account", 
     icon: ArrowDownRight, 
     tone: "bg-emerald-500" 
   },
   { 
     label: "Cash Out", 
-    href: "/agent/cash_out", 
+    href: "/cash_out", 
     detail: "Process user withdrawal", 
     icon: ArrowUpRight, 
     tone: "bg-blue-500" 
@@ -204,7 +204,13 @@ export default function AgentDashboard() {
           {manageItems.map(({ label, icon: Icon }) => (
             <button
               key={label}
-              onClick={() => setActiveNav(label)}
+              onClick={() => {
+                if (label === "Settings") {
+                  router.push("/settings");
+                } else {
+                  setActiveNav(label);
+                }
+              }}
               title={label}
               className={`flex items-center gap-3 rounded-xl py-3 text-sm font-medium transition-colors ${
                 collapsed ? "justify-center px-0" : "px-3"

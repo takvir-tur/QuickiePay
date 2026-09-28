@@ -4,14 +4,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight, Check, Search, Wallet, X } from "lucide-react";
 
-// Mock contacts (In a full app, you might fetch these from an API)
-const contacts = [
-  { name: "Sophia Anderson", phone: "01711234567", initials: "SA", note: "Sent ৳250 · Today" },
-  { name: "Marcus Lee", phone: "01812345678", initials: "ML", note: "Sent ৳40 · 2 days ago" },
-  { name: "Priya Rahman", phone: "01913456789", initials: "PR", note: "Sent ৳120 · Last week" },
-  { name: "David Chen", phone: "01614567890", initials: "DC", note: "Received ৳75" },
-  { name: "Nadia Islam", phone: "01515678901", initials: "NI", note: "Sent ৳18 · Last month" },
-];
+interface Contact {
+  name: string;
+  phone: string;
+  initials: string;
+  note: string;
+}
 
 const amountPresets = [50, 100, 500, 1000, 5000];
 
@@ -20,15 +18,16 @@ function SendMoneyContent(){
   const searchParams = useSearchParams();
   const initialReceiver = searchParams.get("receiver") || "";
   const [query, setQuery] = useState(initialReceiver);
-  const [selected, setSelected] = useState<(typeof contacts)[number] | null>(null);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [selected, setSelected] = useState<Contact | null>(null);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [availableBalance, setAvailableBalance] = useState<string>("0.00");
+  const [loadingContacts, setLoadingContacts] = useState(true);
   
   // ব্যাক লিংক ডাইনামিক করার জন্য স্টেট
   const [backHref, setBackHref] = useState("/");
 
-  
   // Fetch the logged-in user's live balance and check role
   useEffect(() => {
     const savedUserId = sessionStorage.getItem("userId");
@@ -53,6 +52,7 @@ function SendMoneyContent(){
       return;
     }
 
+    // Fetch available balance
     fetch(`http://localhost:5001/api/users/${savedUserId}`, {
       method: "GET",
       headers: {
@@ -70,6 +70,24 @@ function SendMoneyContent(){
       })
       .then((data) => setAvailableBalance(data.balance))
       .catch((error) => console.error("Error fetching balance:", error));
+
+    // Fetch real recent transaction contacts
+    setLoadingContacts(true);
+    fetch(`http://localhost:5001/api/transactions/recent-contacts`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      }
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setContacts(data);
+        }
+      })
+      .catch((err) => console.error("Error fetching recent contacts:", err))
+      .finally(() => setLoadingContacts(false));
   }, [router]);
 
   const results = useMemo(() => {
@@ -78,7 +96,7 @@ function SendMoneyContent(){
     return contacts.filter(
       (c) => c.name.toLowerCase().includes(q) || c.phone.includes(q),
     );
-  }, [query]);
+  }, [query, contacts]);
 
   const rawNumber = query.replace(/\D/g, "");
   const isNewNumber = !selected && rawNumber.length >= 11;
