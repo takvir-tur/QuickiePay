@@ -12,7 +12,8 @@ const {
   getSystemSettings,
   updateSystemSetting,
   reverseTransaction,
-  ignoreFraudAlert
+  ignoreFraudAlert,
+  approveAccount
 } = require('../controllers/adminController');
 
 
@@ -21,6 +22,7 @@ const {
 router.get('/dashboard', verifyToken, verifyAdmin, getAdminDashboardData);
 router.get('/users', verifyToken, verifyAdmin, getAllUsers);
 router.patch('/users/:user_id/toggle-status', verifyToken, verifyAdmin, toggleUserStatus);
+router.patch('/users/:user_id/approve', verifyToken, verifyAdmin, approveAccount);
 router.get('/ledger', verifyToken, verifyAdmin, getGlobalLedger);
 router.get('/alerts', verifyToken, verifyAdmin, getFraudAlerts);
 router.get('/config', verifyToken, verifyAdmin, getSystemSettings);

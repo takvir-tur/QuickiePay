@@ -1,4 +1,5 @@
 const pool = require('../db_connection');
+const { logAdminAction } = require('../utils/auditLogger');
 
 async function getAdminDashboardData(req, res) {
   try {
@@ -42,7 +43,7 @@ async function getAdminDashboardData(req, res) {
     const pendingReviews = pendingResult.rows[0].pending_reviews;
 
     const formattedRows = recentTxnsResult.rows.map(txn => ({
-      id: `TXN-${txn.transaction_id.substring(0, 8).toUpperCase()}`, // Shorten UUID
+      id: `TXN-${txn.transaction_id.substring(0, 8).toUpperCase()}`,
       name: txn.receiver_name,
       phone: txn.receiver_phone,
       type: txn.transaction_type.replace('_', ' '),
@@ -93,7 +94,6 @@ async function toggleUserStatus(req, res) {
   const { user_id } = req.params;
   
   try {
-    // 1. Find which subtype table holds this user
     const typeRes = await pool.query('SELECT account_type FROM accounts WHERE user_id = $1', [user_id]);
     if (typeRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
     
@@ -106,7 +106,6 @@ async function toggleUserStatus(req, res) {
     else if (accountType === 'BILLER') tableName = 'billers';
     else return res.status(400).json({ error: 'Cannot update status for this account type' });
 
-    // 2. Flip the ENUM status directly in the database
     const updateQuery = `
       UPDATE ${tableName}
       SET status = CASE 
@@ -118,6 +117,13 @@ async function toggleUserStatus(req, res) {
     `;
     
     const result = await pool.query(updateQuery, [user_id]);
+    
+    await logAdminAction(pool, req.user.user_id, 'TOGGLE_USER_STATUS', {
+      affectedUserId: user_id,
+      description: `User status changed to ${result.rows[0].status}`,
+      ipAddress: req.ip || req.headers['x-forwarded-for']
+    });
+
     res.json({ message: 'Status updated', status: result.rows[0].status });
     
   } catch (err) {
@@ -211,17 +217,24 @@ async function updateSystemSetting(req, res) {
   const { setting_value } = req.body;
 
   try {
-    const result = await pool.query(`
+    const updateQuery = `
       UPDATE system_settings 
       SET setting_value = $1 
       WHERE setting_key = $2 
       RETURNING *
-    `, [setting_value, setting_key]);
+    `;
+
+    const result = await pool.query(updateQuery, [setting_value, setting_key]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Setting key not found' });
     }
     
+    await logAdminAction(pool, req.user.user_id, 'UPDATE_SYSTEM_SETTING', {
+      description: `Updated system setting ${setting_key} to ${setting_value}`,
+      ipAddress: req.ip || req.headers['x-forwarded-for']
+    });
+
     res.json({ message: 'Configuration updated successfully', setting: result.rows[0] });
   } catch (err) {
     console.error('Error updating setting:', err);
@@ -237,7 +250,6 @@ async function reverseTransaction(req, res) {
   try {
     await client.query('BEGIN');
 
-    // 1. Fetch transaction
     const txnRes = await client.query('SELECT * FROM transactions WHERE transaction_id = $1 FOR UPDATE', [transaction_id]);
     
     if (txnRes.rows.length === 0) {
@@ -247,20 +259,17 @@ async function reverseTransaction(req, res) {
 
     const txn = txnRes.rows[0];
 
-    // 2. Check if already cancelled or failed
     if (txn.transaction_status === 'CANCELLED' || txn.transaction_status === 'FAILED') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Transaction cannot be reversed because it is already ' + txn.transaction_status });
     }
 
-    // Lock accounts in deterministic order
     const accountsToLock = [txn.sender_account_id, txn.receiver_account_id].sort();
     if (accountsToLock[0] && accountsToLock[1]) {
       await client.query('SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE', [accountsToLock[0]]);
       await client.query('SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE', [accountsToLock[1]]);
     }
 
-    // 3. Deduct amount from receiver
     const receiverBalanceRes = await client.query('SELECT balance FROM accounts WHERE account_id = $1', [txn.receiver_account_id]);
     if (receiverBalanceRes.rows.length > 0) {
       if (parseFloat(receiverBalanceRes.rows[0].balance) < parseFloat(txn.amount)) {
@@ -270,13 +279,11 @@ async function reverseTransaction(req, res) {
       await client.query('UPDATE accounts SET balance = balance - $1 WHERE account_id = $2', [txn.amount, txn.receiver_account_id]);
     }
 
-    // 4. Refund sender (amount + fee)
     if (txn.sender_account_id) {
       const refundAmount = parseFloat(txn.amount) + parseFloat(txn.fee || 0);
       await client.query('UPDATE accounts SET balance = balance + $1 WHERE account_id = $2', [refundAmount, txn.sender_account_id]);
     }
 
-    // 5. Cancel transaction
     await client.query("UPDATE transactions SET transaction_status = 'CANCELLED' WHERE transaction_id = $1", [transaction_id]);
 
     await client.query('COMMIT');
@@ -301,6 +308,13 @@ async function ignoreFraudAlert(req, res) {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Transaction not found' });
     }
+
+    await logAdminAction(pool, req.user.user_id, 'IGNORE_FRAUD_ALERT', {
+      transactionId: transaction_id,
+      description: 'Admin ignored fraud alert',
+      ipAddress: req.ip || req.headers['x-forwarded-for']
+    });
+
     res.status(200).json({ message: 'Alert ignored successfully' });
   } catch (err) {
     console.error('Error ignoring fraud alert:', err);
@@ -308,7 +322,51 @@ async function ignoreFraudAlert(req, res) {
   }
 }
 
-// Ensure you export the new functions at the bottom!
+// Approve a Biller, Agent, or Merchant
+async function approveAccount(req, res) {
+  const { user_id } = req.params;
+  
+  try {
+    const typeRes = await pool.query('SELECT account_type FROM accounts WHERE user_id = $1', [user_id]);
+    if (typeRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    
+    const accountType = typeRes.rows[0].account_type;
+    let tableName = '';
+    
+    if (accountType === 'AGENT') tableName = 'agents';
+    else if (accountType === 'BUSINESS') tableName = 'merchants';
+    else if (accountType === 'BILLER') tableName = 'billers';
+    else return res.status(400).json({ error: 'Cannot approve this account type' });
+
+    const adminRes = await pool.query('SELECT admin_id FROM admins WHERE user_id = $1', [req.user.user_id]);
+    const actualAdminId = adminRes.rows.length > 0 ? adminRes.rows[0].admin_id : null;
+
+    const updateQuery = `
+      UPDATE ${tableName} 
+      SET approved_by = $1 
+      WHERE user_id = $2 
+      RETURNING *
+    `;
+    
+    const result = await pool.query(updateQuery, [actualAdminId, user_id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Account details not found in specific table' });
+    }
+
+    await logAdminAction(pool, req.user.user_id, 'APPROVE_ACCOUNT', {
+      affectedUserId: user_id,
+      description: `Admin approved ${accountType} account`,
+      ipAddress: req.ip || req.headers['x-forwarded-for']
+    });
+
+    res.json({ message: 'Account approved successfully' });
+  } catch (err) {
+    console.error('Error approving account:', err);
+    res.status(500).json({ error: 'Server error approving account' });
+  }
+}
+
 module.exports = { 
   getAdminDashboardData, 
   getAllUsers, 
@@ -318,5 +376,6 @@ module.exports = {
   getSystemSettings,   
   updateSystemSetting,
   reverseTransaction,
-  ignoreFraudAlert
+  ignoreFraudAlert,
+  approveAccount
 };
