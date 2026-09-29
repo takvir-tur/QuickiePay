@@ -24,6 +24,7 @@ function SendMoneyContent(){
   const [note, setNote] = useState("");
   const [availableBalance, setAvailableBalance] = useState<string>("0.00");
   const [loadingContacts, setLoadingContacts] = useState(true);
+  const [sendMoneyFlatFee, setSendMoneyFlatFee] = useState(0);
   
   // ব্যাক লিংক ডাইনামিক করার জন্য স্টেট
   const [backHref, setBackHref] = useState("/");
@@ -71,6 +72,17 @@ function SendMoneyContent(){
       .then((data) => setAvailableBalance(data.balance))
       .catch((error) => console.error("Error fetching balance:", error));
 
+    fetch("http://localhost:5001/api/system/configs", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.SEND_MONEY_FLAT_FEE) {
+          setSendMoneyFlatFee(Number(data.SEND_MONEY_FLAT_FEE));
+        }
+      })
+      .catch((err) => console.error("Error fetching configs:", err));
+
     // Fetch real recent transaction contacts
     setLoadingContacts(true);
     fetch(`http://localhost:5001/api/transactions/recent-contacts`, {
@@ -103,12 +115,13 @@ function SendMoneyContent(){
   const receiver = selected?.phone ?? (isNewNumber ? rawNumber : "");
   const receiverName = selected?.name ?? (isNewNumber ? "New recipient" : "");
   const numericAmount = Number(amount);
+  const totalDeduction = numericAmount > 0 ? numericAmount + sendMoneyFlatFee : 0;
   
   const canContinue =
     receiver.length >= 11 && 
     Number.isFinite(numericAmount) && 
     numericAmount > 0 && 
-    numericAmount <= parseFloat(availableBalance);
+    totalDeduction <= parseFloat(availableBalance);
 
   function handleContinue() {
     if (!canContinue) return;
@@ -118,6 +131,8 @@ function SendMoneyContent(){
       receiver: receiver,
       name: receiverName,
       amount: numericAmount.toFixed(2),
+      charge: sendMoneyFlatFee.toFixed(2),
+      total: totalDeduction.toFixed(2),
       note: note.trim(),
     });
 
@@ -253,9 +268,9 @@ function SendMoneyContent(){
               </div>
 
               {/* Validation Warning */}
-              {numericAmount > parseFloat(availableBalance) && (
+              {numericAmount > 0 && totalDeduction > parseFloat(availableBalance) && (
                 <p className="mt-3 text-xs font-medium text-red-500">
-                  Amount exceeds available balance.
+                  Total deduction exceeds available balance.
                 </p>
               )}
 
@@ -269,6 +284,39 @@ function SendMoneyContent(){
                 placeholder="What's this for?"
                 className="mt-2 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none placeholder:text-gray-400 focus:border-blue-500 dark:border-gray-800 dark:bg-gray-900 dark:placeholder:text-gray-500 dark:focus:border-blue-800"
               />
+
+              {/* Live Charge & Total Deduction Breakdown Card */}
+              {numericAmount > 0 && (
+                <div className="mt-6 rounded-2xl bg-gray-50 dark:bg-gray-800/60 p-4 border border-gray-200 dark:border-gray-700/60 space-y-2">
+                  <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                    <span>Send Money Amount</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">
+                      ৳{numericAmount.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                    <span>Transfer Fee (Flat)</span>
+                    <span className="font-semibold text-amber-600 dark:text-amber-400">
+                      +৳{sendMoneyFlatFee.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="pt-2 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                    <div>
+                      <span className="text-sm font-bold text-gray-900 dark:text-white">
+                        Total Deduction
+                      </span>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        Amount + fee will be deducted
+                      </p>
+                    </div>
+                    <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                      ৳{totalDeduction.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </section>
 
             {/* BALANCE & SUBMIT BUTTON */}

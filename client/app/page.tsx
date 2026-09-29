@@ -71,6 +71,7 @@ const offers = [
 
 
 export default function App() {
+  const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState("USER");
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -104,6 +105,15 @@ export default function App() {
     if (!savedUserId || !token) {
       router.push("/login");
       return; 
+    }
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.isAdmin === true || payload.role === 'ADMIN' || payload.account_type === 'ADMIN') {
+        setIsAdmin(true);
+      }
+    } catch (e) {
+      console.error("Invalid token format");
     }
 
     fetch(`http://localhost:5001/api/users/${savedUserId}`, {
@@ -166,6 +176,7 @@ export default function App() {
           )}
 
           <button
+            onClick={() => router.push("/settings")}
             className={`mt-7 flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 transition-colors hover:border-blue-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-900 ${
               collapsed ? "justify-center p-2" : "p-3"
             }`}
@@ -210,7 +221,7 @@ export default function App() {
               </button>
             ))}
             {/* ONLY render this link if the user has admin privileges */}
-            {userRole !== "USER" && (
+            {isAdmin && (
               <>
                 <div className="my-2 border-t border-gray-200 dark:border-gray-800" />
                 <button

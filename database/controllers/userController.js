@@ -1,6 +1,7 @@
 require('dotenv').config();
 const pool = require('../db_connection');
 const bcrypt = require('bcryptjs');
+const { getSystemConfigs } = require('../utils/configHelper');
 
 // Get user by ID (existing dashboard feed)
 async function getUserById(req, res) {
@@ -167,9 +168,49 @@ async function changePin(req, res) {
   }
 }
 
+const getUserLimits = async (req, res) => {
+    try {
+        const userId = req.user.user_id;
+
+        // 1. Get the account ID for this user
+        const accountCheck = await pool.query(
+            'SELECT account_id FROM accounts WHERE user_id = $1', 
+            [userId]
+        );
+        
+        if (accountCheck.rows.length === 0) {
+            return res.status(404).json({ error: "Account not found" });
+        }
+        const accountId = accountCheck.rows[0].account_id;
+
+        // 2. Fetch Global Configs
+        const configs = await getSystemConfigs();
+
+        // 3. Calculate Today's Spending
+        const dailyLimitCheck = await pool.query(`
+            SELECT COALESCE(SUM(amount), 0) as daily_total 
+            FROM transactions 
+            WHERE sender_account_id = $1 
+              AND DATE(transaction_time) = CURRENT_DATE 
+              AND transaction_status = 'SUCCESS'
+        `, [accountId]);
+
+        res.status(200).json({
+            dailyLimit: Number(configs.DAILY_TXN_LIMIT),
+            usedToday: Number(dailyLimitCheck.rows[0].daily_total),
+            maxPerTxn: Number(configs.MAX_PER_TXN_LIMIT)
+        });
+
+    } catch (error) {
+        console.error("Get Limits Error:", error.message);
+        res.status(500).json({ error: "Failed to fetch limits" });
+    }
+};
+
 module.exports = {
   getUserById,
   getProfile,
   updateProfile,
-  changePin
+  changePin,
+  getUserLimits
 };

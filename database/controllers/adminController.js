@@ -2,55 +2,61 @@ const pool = require('../db_connection');
 
 async function getAdminDashboardData(req, res) {
   try {
-    // 1. Get total users
-    const usersResult = await pool.query('SELECT COUNT(*) FROM users');
-    const totalUsers = parseInt(usersResult.rows[0].count);
+    const [usersResult, balanceResult, volumeResult, pendingResult, recentTxnsResult] = await Promise.all([
+      pool.query(`
+        SELECT COUNT(*)::int AS total_users 
+        FROM users u
+        LEFT JOIN personal_accounts pa ON u.user_id = pa.user_id
+        LEFT JOIN agents a ON u.user_id = a.user_id
+        LEFT JOIN merchants m ON u.user_id = m.user_id
+        LEFT JOIN billers b ON u.user_id = b.user_id
+        WHERE COALESCE(pa.status, a.status, m.status, b.status) = 'ACTIVE'
+      `),
+      pool.query(`SELECT COALESCE(SUM(balance), 0)::float AS total_balance FROM accounts`),
+      pool.query(`SELECT COALESCE(SUM(amount), 0)::float AS volume_24h FROM transactions WHERE transaction_time >= NOW() - INTERVAL '24 hours' AND transaction_status = 'SUCCESS'`),
+      pool.query(`
+        SELECT COUNT(*)::int AS pending_reviews 
+        FROM transactions 
+        WHERE (amount >= 50000 OR transaction_status = 'FAILED') 
+          AND (is_risk_reviewed IS NULL OR is_risk_reviewed = FALSE)
+      `),
+      pool.query(`
+        SELECT 
+          t.transaction_id, 
+          t.transaction_type, 
+          t.amount, 
+          t.transaction_status,
+          u.full_name as receiver_name,
+          u.phone_number as receiver_phone
+        FROM transactions t
+        JOIN accounts a ON t.receiver_account_id = a.account_id
+        JOIN users u ON a.user_id = u.user_id
+        ORDER BY t.transaction_time DESC
+        LIMIT 10
+      `)
+    ]);
 
-    // 2. Get total transaction volume (Sum of all successful transaction amounts)
-    const volumeResult = await pool.query(`
-      SELECT SUM(amount) as total 
-      FROM transactions 
-      WHERE transaction_status = 'SUCCESS'
-    `);
-    const totalVolume = parseFloat(volumeResult.rows[0].total || 0);
+    const totalUsers = usersResult.rows[0].total_users;
+    const totalBalance = balanceResult.rows[0].total_balance;
+    const volume24h = volumeResult.rows[0].volume_24h;
+    const pendingReviews = pendingResult.rows[0].pending_reviews;
 
-    // 3. Get recent transactions for the ledger table
-    const recentTxns = await pool.query(`
-      SELECT 
-        t.transaction_id, 
-        t.transaction_type, 
-        t.amount, 
-        t.transaction_status,
-        u.full_name as receiver_name,
-        u.phone_number as receiver_phone
-      FROM transactions t
-      JOIN accounts a ON t.receiver_account_id = a.account_id
-      JOIN users u ON a.user_id = u.user_id
-      ORDER BY t.transaction_time DESC
-      LIMIT 10
-    `);
-
-    // Format the database rows to match the exact shape your frontend interface expects
-    const formattedRows = recentTxns.rows.map(txn => ({
+    const formattedRows = recentTxnsResult.rows.map(txn => ({
       id: `TXN-${txn.transaction_id.substring(0, 8).toUpperCase()}`, // Shorten UUID
       name: txn.receiver_name,
       phone: txn.receiver_phone,
       type: txn.transaction_type.replace('_', ' '),
       amount: `৳${parseFloat(txn.amount).toFixed(2)}`,
       reason: txn.transaction_status,
-      // Color code the status pill: Failed=High risk (red), Success=Low risk (gray)
       severity: txn.transaction_status === 'FAILED' ? 'high' : 'low' 
     }));
 
-    // Send everything back in one clean package
-    res.json({
-      stats: {
-        totalUsers: totalUsers.toLocaleString(),
-        totalBalance: "৳---", // Placeholder until you implement global balance logic
-        volume24h: `৳${totalVolume.toLocaleString()}`,
-        pendingReviews: "0" 
-      },
-      flagged: formattedRows
+    res.status(200).json({
+      totalUsers,
+      totalBalance,
+      volume24h,
+      pendingReviews,
+      recentTransactions: formattedRows
     });
 
   } catch (err) {
@@ -175,7 +181,8 @@ async function getFraudAlerts(req, res) {
       FROM transactions t
       JOIN accounts a ON t.sender_account_id = a.account_id
       JOIN users u ON a.user_id = u.user_id
-      WHERE t.amount >= 50000 OR t.transaction_status = 'FAILED'
+      WHERE (t.amount >= 50000 OR t.transaction_status = 'FAILED')
+        AND (t.is_risk_reviewed IS NULL OR t.is_risk_reviewed = FALSE)
       ORDER BY t.transaction_time DESC
       LIMIT 50
     `);
@@ -222,6 +229,85 @@ async function updateSystemSetting(req, res) {
   }
 }
 
+// Reverse a transaction
+async function reverseTransaction(req, res) {
+  const { transaction_id } = req.params;
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // 1. Fetch transaction
+    const txnRes = await client.query('SELECT * FROM transactions WHERE transaction_id = $1 FOR UPDATE', [transaction_id]);
+    
+    if (txnRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    const txn = txnRes.rows[0];
+
+    // 2. Check if already cancelled or failed
+    if (txn.transaction_status === 'CANCELLED' || txn.transaction_status === 'FAILED') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Transaction cannot be reversed because it is already ' + txn.transaction_status });
+    }
+
+    // Lock accounts in deterministic order
+    const accountsToLock = [txn.sender_account_id, txn.receiver_account_id].sort();
+    if (accountsToLock[0] && accountsToLock[1]) {
+      await client.query('SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE', [accountsToLock[0]]);
+      await client.query('SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE', [accountsToLock[1]]);
+    }
+
+    // 3. Deduct amount from receiver
+    const receiverBalanceRes = await client.query('SELECT balance FROM accounts WHERE account_id = $1', [txn.receiver_account_id]);
+    if (receiverBalanceRes.rows.length > 0) {
+      if (parseFloat(receiverBalanceRes.rows[0].balance) < parseFloat(txn.amount)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Receiver has insufficient balance to reverse this transaction' });
+      }
+      await client.query('UPDATE accounts SET balance = balance - $1 WHERE account_id = $2', [txn.amount, txn.receiver_account_id]);
+    }
+
+    // 4. Refund sender (amount + fee)
+    if (txn.sender_account_id) {
+      const refundAmount = parseFloat(txn.amount) + parseFloat(txn.fee || 0);
+      await client.query('UPDATE accounts SET balance = balance + $1 WHERE account_id = $2', [refundAmount, txn.sender_account_id]);
+    }
+
+    // 5. Cancel transaction
+    await client.query("UPDATE transactions SET transaction_status = 'CANCELLED' WHERE transaction_id = $1", [transaction_id]);
+
+    await client.query('COMMIT');
+    res.json({ message: 'Transaction reversed successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error reversing transaction:', err);
+    res.status(500).json({ error: 'Server error reversing transaction' });
+  } finally {
+    client.release();
+  }
+}
+
+// Ignore a fraud alert
+async function ignoreFraudAlert(req, res) {
+  const { transaction_id } = req.params;
+  try {
+    const result = await pool.query(
+      'UPDATE transactions SET is_risk_reviewed = TRUE WHERE transaction_id = $1 RETURNING transaction_id',
+      [transaction_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+    res.status(200).json({ message: 'Alert ignored successfully' });
+  } catch (err) {
+    console.error('Error ignoring fraud alert:', err);
+    res.status(500).json({ error: 'Server error ignoring fraud alert' });
+  }
+}
+
 // Ensure you export the new functions at the bottom!
 module.exports = { 
   getAdminDashboardData, 
@@ -230,5 +316,7 @@ module.exports = {
   getGlobalLedger,
   getFraudAlerts,
   getSystemSettings,   
-  updateSystemSetting  
+  updateSystemSetting,
+  reverseTransaction,
+  ignoreFraudAlert
 };

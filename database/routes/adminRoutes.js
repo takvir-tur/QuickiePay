@@ -10,7 +10,9 @@ const {
   getGlobalLedger,
   getFraudAlerts,
   getSystemSettings,
-  updateSystemSetting
+  updateSystemSetting,
+  reverseTransaction,
+  ignoreFraudAlert
 } = require('../controllers/adminController');
 
 
@@ -19,8 +21,11 @@ const {
 router.get('/dashboard', verifyToken, verifyAdmin, getAdminDashboardData);
 router.get('/users', verifyToken, verifyAdmin, getAllUsers);
 router.patch('/users/:user_id/toggle-status', verifyToken, verifyAdmin, toggleUserStatus);
-router.get('/ledger', verifyToken, verifyAdmin, getGlobalLedger, getFraudAlerts);
+router.get('/ledger', verifyToken, verifyAdmin, getGlobalLedger);
+router.get('/alerts', verifyToken, verifyAdmin, getFraudAlerts);
 router.get('/config', verifyToken, verifyAdmin, getSystemSettings);
 router.patch('/config/:setting_key', verifyToken, verifyAdmin, updateSystemSetting);
+router.post('/transactions/:transaction_id/reverse', verifyToken, verifyAdmin, reverseTransaction);
+router.patch('/alerts/:transaction_id/ignore', verifyToken, verifyAdmin, ignoreFraudAlert);
 
 module.exports = router;

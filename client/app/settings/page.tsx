@@ -58,6 +58,9 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Limits State
+  const [limits, setLimits] = useState({ dailyLimit: 0, usedToday: 0, maxPerTxn: 0 });
+
   // Profile Form State
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -121,6 +124,28 @@ export default function SettingsPage() {
         console.error("Error loading profile:", err);
         setLoading(false);
       });
+
+    const fetchLimits = async () => {
+      try {
+        if (!token) return;
+
+        const res = await fetch('http://localhost:5001/api/users/limits', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!res.ok) throw new Error("Failed to fetch limits");
+        
+        const data = await res.json();
+        setLimits(data);
+      } catch (err) {
+        console.error("Error loading limits:", err);
+      }
+    };
+
+    fetchLimits();
   }, [router]);
 
   const handleProfileSave = async (e: React.FormEvent) => {
@@ -549,43 +574,26 @@ export default function SettingsPage() {
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm font-semibold">Daily Send / Cash Out Limit</span>
                         <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                          ৳50,000.00 / day
+                          ৳{limits.dailyLimit.toLocaleString('en-IN')} / day
                         </span>
                       </div>
                       <div className="h-2.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-                        <div className="h-full bg-blue-600 rounded-full w-[15%]" />
+                        <div 
+                          className="h-full bg-blue-600 rounded-full transition-all duration-500" 
+                          style={{ width: `${Math.min(limits.dailyLimit > 0 ? (limits.usedToday / limits.dailyLimit) * 100 : 0, 100)}%` }} 
+                        />
                       </div>
                       <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Used today: ৳7,500.00 · Remaining: ৳42,500.00
-                      </p>
-                    </div>
-
-                    {/* Monthly Limit */}
-                    <div className="rounded-2xl border border-gray-200 p-5 dark:border-gray-800">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-semibold">Monthly Total Transaction Limit</span>
-                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                          ৳300,000.00 / month
-                        </span>
-                      </div>
-                      <div className="h-2.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-                        <div className="h-full bg-emerald-600 rounded-full w-[25%]" />
-                      </div>
-                      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Used this month: ৳75,000.00 · Remaining: ৳225,000.00
+                        Used today: ৳{limits.usedToday.toLocaleString('en-IN')} · Remaining: ৳{Math.max(0, limits.dailyLimit - limits.usedToday).toLocaleString('en-IN')}
                       </p>
                     </div>
 
                     {/* Single Transaction Limit */}
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Max Per Transaction</p>
-                        <p className="text-xl font-bold mt-1">৳25,000.00</p>
-                      </div>
-                      <div className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50">
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Max Wallet Balance</p>
-                        <p className="text-xl font-bold mt-1">৳500,000.00</p>
-                      </div>
+                    <div className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800/50 flex flex-col">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">Max Per Transaction</span>
+                      <span className="text-lg font-semibold mt-1">
+                          ৳{limits.maxPerTxn > 0 ? limits.maxPerTxn.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '---'}
+                      </span>
                     </div>
                   </div>
                 </div>

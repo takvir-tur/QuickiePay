@@ -1,5 +1,6 @@
 const pool = require('../db_connection');
 const bcrypt = require('bcryptjs');
+const { getSystemConfigs } = require('../utils/configHelper');
 
 
 async function makePayment(req, res) {
@@ -58,6 +59,11 @@ async function makePayment(req, res) {
 
     if (merchant.merchant_account_id === payer.payer_account_id) {
       return res.status(400).json({ error: 'You cannot pay your own merchant account' });
+    }
+
+    const configs = await getSystemConfigs();
+    if (configs.MAX_PER_TXN_LIMIT && numericAmount > Number(configs.MAX_PER_TXN_LIMIT)) {
+        return res.status(400).json({ error: `Amount exceeds the maximum limit of ৳${configs.MAX_PER_TXN_LIMIT} per transaction.` });
     }
 
     await client.query('BEGIN');
@@ -174,31 +180,43 @@ async function getMerchantLookup(req, res) {
 
 
 async function sendMoney(req, res) {
-  // sender_id comes from your JWT verifyToken middleware
   const senderUserId = req.user.user_id; 
   const { receiver_phone, amount, pin, note } = req.body;
-
-  if (amount <= 0) {
+  
+  const numericAmount = parseFloat(amount);
+  if (isNaN(numericAmount) || numericAmount <= 0) {
     return res.status(400).json({ error: 'Amount must be greater than 0' });
   }
 
+  // 1. Check out connection
+  const client = await pool.connect();
+  
   try {
-    // 1. Get Sender Info & Verify PIN
-    const senderResult = await pool.query(`
-      SELECT u.pin_hash, a.account_id 
+    // 2. Start Transaction
+    await client.query("BEGIN");
+
+    // 3. Get Sender Info & Verify PIN
+    const senderResult = await client.query(`
+      SELECT u.pin_hash, a.account_id
       FROM users u
       JOIN accounts a ON u.user_id = a.user_id
       WHERE u.user_id = $1
     `, [senderUserId]);
     
+    if (senderResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: 'Sender not found' });
+    }
+
     const sender = senderResult.rows[0];
     const isPinValid = await bcrypt.compare(pin, sender.pin_hash);
     if (!isPinValid) {
+      await client.query("ROLLBACK");
       return res.status(401).json({ error: 'Invalid PIN' });
     }
 
-    // 2. Get Receiver Info
-    const receiverResult = await pool.query(`
+    // 4. Get Receiver Info
+    const receiverResult = await client.query(`
       SELECT a.account_id 
       FROM users u
       JOIN accounts a ON u.user_id = a.user_id
@@ -206,6 +224,7 @@ async function sendMoney(req, res) {
     `, [receiver_phone]);
 
     if (receiverResult.rows.length === 0) {
+      await client.query("ROLLBACK");
       return res.status(404).json({ error: 'Receiver not found' });
     }
 
@@ -213,49 +232,76 @@ async function sendMoney(req, res) {
     const senderAccountId = sender.account_id;
 
     if (senderAccountId === receiverAccountId) {
+      await client.query("ROLLBACK");
       return res.status(400).json({ error: 'You cannot send money to yourself' });
     }
 
-    // 3. Prevent Deadlocks: Sort Account IDs alphabetically
+    // 5. Global Configs & Limit Check
+    const configs = await getSystemConfigs();
+
+    if (configs.MAX_PER_TXN_LIMIT && numericAmount > Number(configs.MAX_PER_TXN_LIMIT)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `Amount exceeds the maximum limit of ৳${configs.MAX_PER_TXN_LIMIT} per transaction.` });
+    }
+    
+    const dailyLimitCheck = await client.query(`
+      SELECT COALESCE(SUM(amount), 0) as daily_total 
+      FROM transactions 
+      WHERE sender_account_id = $1 
+        AND DATE(transaction_time) = CURRENT_DATE 
+        AND transaction_status = 'SUCCESS'
+    `, [senderAccountId]);
+
+    const dailyTotal = Number(dailyLimitCheck.rows[0].daily_total);
+    
+    if ((dailyTotal + numericAmount) > Number(configs.DAILY_TXN_LIMIT)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ 
+          error: `Transaction exceeds your daily limit of ৳${configs.DAILY_TXN_LIMIT}. (Current daily total: ৳${dailyTotal})` 
+      });
+    }
+
+    const fee = Number(configs.SEND_MONEY_FLAT_FEE);
+    const totalDeduction = Number((numericAmount + fee).toFixed(2));
+
+    // 6. Prevent Deadlocks: Sort Account IDs alphabetically
     const accountsToLock = [senderAccountId, receiverAccountId].sort();
 
-    // ==========================================
-    // START TRANSACTION
-    // ==========================================
-    await pool.query('BEGIN');
+    // 7. Lock Rows in deterministic order
+    await client.query('SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE', [accountsToLock[0]]);
+    await client.query('SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE', [accountsToLock[1]]);
 
-    // 4. Lock Rows in deterministic order
-    await pool.query('SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE', [accountsToLock[0]]);
-    await pool.query('SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE', [accountsToLock[1]]);
-
-    // 5. Check Sender's Exact Balance AFTER securing the lock
-    const balanceCheck = await pool.query('SELECT balance FROM accounts WHERE account_id = $1', [senderAccountId]);
-    if (parseFloat(balanceCheck.rows[0].balance) < amount) {
-      await pool.query('ROLLBACK');
+    // 8. Check Sender's Exact Balance AFTER securing the lock
+    const balanceCheck = await client.query('SELECT balance FROM accounts WHERE account_id = $1', [senderAccountId]);
+    if (parseFloat(balanceCheck.rows[0].balance) < totalDeduction) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Insufficient balance' });
     }
 
-    // 6. Execute Atomic Updates
-    await pool.query('UPDATE accounts SET balance = balance - $1 WHERE account_id = $2', [amount, senderAccountId]);
-    await pool.query('UPDATE accounts SET balance = balance + $1 WHERE account_id = $2', [amount, receiverAccountId]);
+    // 9. Execute Atomic Updates
+    await client.query('UPDATE accounts SET balance = balance - $1 WHERE account_id = $2', [totalDeduction, senderAccountId]);
+    await client.query('UPDATE accounts SET balance = balance + $1 WHERE account_id = $2', [numericAmount, receiverAccountId]);
 
-    // 7. Record the Transaction[cite: 2]
+    // 10. Record the Transaction
     const referenceNo = `TXN${Date.now()}`;
-    await pool.query(`
-      INSERT INTO transactions (reference_no, transaction_type, sender_account_id, receiver_account_id, amount, transaction_status, remarks)
-      VALUES ($1, 'SEND_MONEY', $2, $3, $4, 'SUCCESS', $5)
-    `, [referenceNo, senderAccountId, receiverAccountId, amount, note || null]);
+    await client.query(`
+      INSERT INTO transactions (reference_no, transaction_type, sender_account_id, receiver_account_id, amount, fee, transaction_status, remarks)
+      VALUES ($1, 'SEND_MONEY', $2, $3, $4, $5, 'SUCCESS', $6)
+    `, [referenceNo, senderAccountId, receiverAccountId, numericAmount, fee, note || null]);
 
-    await pool.query('COMMIT');
+    // 11. Commit
+    await client.query('COMMIT');
+    res.status(200).json({ message: 'Money sent successfully', referenceNo, amount: numericAmount, fee, totalDeduction });
 
-    res.status(200).json({ message: 'Money sent successfully', referenceNo, amount });
   } catch (err) {
-    await pool.query('ROLLBACK');
+    await client.query('ROLLBACK');
     console.error('Send Money Error:', err.message);
     res.status(500).json({ error: 'Transaction failed' });
+  } finally {
+    // 12. ALWAYS release the client
+    client.release();
   }
 }
-
 // =====================================================
 // CASH IN
 // Agent gives digital money to customer
@@ -668,14 +714,33 @@ const cashOut = async (req, res) => {
             });
         }
 
-        // -----------------------------
-        // 6. Calculate commission / charge
-        // -----------------------------
+        const configs = await getSystemConfigs();
 
-        const commissionRate = Number(agent.commission_rate) || 1.50;
-        const commission = Number(((numericAmount * commissionRate) / 100).toFixed(2));
-        const totalDeduction = Number((numericAmount + commission).toFixed(2));
+        if (configs.MAX_PER_TXN_LIMIT && numericAmount > Number(configs.MAX_PER_TXN_LIMIT)) {
+            await client.query("ROLLBACK");
+            return res.status(400).json({ error: `Amount exceeds the maximum limit of ৳${configs.MAX_PER_TXN_LIMIT} per transaction.` });
+        }
 
+        const dailyLimitCheck = await client.query(`
+          SELECT COALESCE(SUM(amount), 0) as daily_total 
+          FROM transactions 
+          WHERE sender_account_id = $1 
+            AND DATE(transaction_time) = CURRENT_DATE 
+            AND transaction_status = 'SUCCESS'
+        `, [user.account_id]);
+
+        const dailyTotal = Number(dailyLimitCheck.rows[0].daily_total);
+        
+        if ((dailyTotal + numericAmount) > Number(configs.DAILY_TXN_LIMIT)) {
+            await client.query("ROLLBACK");
+            return res.status(400).json({ 
+                error: `Transaction exceeds your daily limit of ৳${configs.DAILY_TXN_LIMIT}. (Current daily total: ৳${dailyTotal})` 
+            });
+        }
+
+        const fee = (Number(numericAmount) * Number(configs.CASH_OUT_FEE_PCT)) / 100;
+        
+        const totalDeduction = Number((numericAmount + fee).toFixed(2));
         // -----------------------------
         // 7. Lock Accounts in deterministic order (Deadlock Prevention)
         // -----------------------------
@@ -701,7 +766,7 @@ const cashOut = async (req, res) => {
             await client.query("ROLLBACK");
 
             return res.status(400).json({
-                error: `Insufficient balance. Required: ৳${totalDeduction.toFixed(2)} (Amount: ৳${numericAmount.toFixed(2)} + Charge: ৳${commission.toFixed(2)}), Available: ৳${currentUserBalance.toFixed(2)}`,
+                error: `Insufficient balance. Required: ৳${totalDeduction.toFixed(2)} (Amount: ৳${numericAmount.toFixed(2)} + Charge: ৳${fee.toFixed(2)}), Available: ৳${currentUserBalance.toFixed(2)}`,
                 balance: currentUserBalance,
                 required: totalDeduction
             });
@@ -765,7 +830,7 @@ const cashOut = async (req, res) => {
                 user.account_id,
                 agent.agent_account_id,
                 numericAmount,
-                commission,
+                fee,
                 note || null
             ]
         );
@@ -794,9 +859,13 @@ const cashOut = async (req, res) => {
             [
                 transaction.transaction_id,
                 agent.agent_id,
-                commission
+                fee
             ]
         );
+
+        // -----------------------------
+        // 12. Commit
+        // -----------------------------
 
         // -----------------------------
         // 12. Commit
@@ -808,8 +877,8 @@ const cashOut = async (req, res) => {
             message: "Cash out successful",
             referenceNo: transaction.reference_no,
             amount: numericAmount,
-            charge: commission,
-            commission: commission,
+            charge: fee, 
+            commission: fee, 
             totalDeduction: totalDeduction,
             agent: {
                 name: agent.full_name,

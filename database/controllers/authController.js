@@ -438,8 +438,8 @@ async function loginUser(req, res) {
                 u.*,
                 a.role AS admin_role,
                 a.permission_level,
-                acc.account_type
-
+                acc.account_type,
+                COALESCE(pa.status, ag.status, m.status, b.status, 'ACTIVE') AS status
             FROM users u
 
             LEFT JOIN admins a
@@ -447,6 +447,11 @@ async function loginUser(req, res) {
 
             LEFT JOIN accounts acc
                 ON u.user_id = acc.user_id
+
+            LEFT JOIN personal_accounts pa ON u.user_id = pa.user_id
+            LEFT JOIN agents ag ON u.user_id = ag.user_id
+            LEFT JOIN merchants m ON u.user_id = m.user_id
+            LEFT JOIN billers b ON u.user_id = b.user_id
 
             WHERE u.phone_number = $1
             `,
@@ -471,6 +476,12 @@ async function loginUser(req, res) {
                 user.pin_hash
             );
 
+        if (user.status === 'BLOCKED') {
+            return res.status(403).json({
+                error: 'Account has been frozen by administration.'
+            });
+        }
+
 
         if (!isPinValid) {
 
@@ -486,6 +497,9 @@ async function loginUser(req, res) {
             'PERSONAL';
 
 
+        const adminCheck = await pool.query('SELECT admin_id FROM admins WHERE user_id = $1', [user.user_id]);
+        const isAdmin = adminCheck.rows.length > 0;
+
         const token = jwt.sign(
 
             {
@@ -493,7 +507,8 @@ async function loginUser(req, res) {
                 phone: user.phone_number,
                 role: userRole,
                 permission_level:
-                    user.permission_level || 0
+                    user.permission_level || 0,
+                isAdmin: isAdmin
             },
 
             process.env.JWT_SECRET,

@@ -5,13 +5,15 @@ const {
   getUserById, 
   getProfile, 
   updateProfile, 
-  changePin 
+  changePin,
+  getUserLimits
 } = require('../controllers/userController');
 
 // Profile & Settings
 router.get('/profile/me', verifyToken, getProfile);
 router.put('/profile', verifyToken, updateProfile);
 router.put('/change-pin', verifyToken, changePin);
+router.get('/limits', verifyToken, getUserLimits);
 
 // By user ID (for dashboard user data)
 router.get('/:id', verifyToken, getUserById);

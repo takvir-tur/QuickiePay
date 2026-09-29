@@ -57,11 +57,11 @@ export default function AdminDashboard() {
   
   // Real data states
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    totalUsers: "0",
-    totalBalance: "৳0.00",
-    volume24h: "৳0.00",
-    pendingReviews: "0"
+  const [metrics, setMetrics] = useState({
+    totalUsers: 0,
+    totalBalance: 0,
+    volume24h: 0,
+    pendingReviews: 0
   });
   const [flaggedRows, setFlaggedRows] = useState<FlaggedTransaction[]>([]);
 
@@ -83,8 +83,13 @@ export default function AdminDashboard() {
         return res.json();
       })
       .then((data) => {
-        setStats(data.stats);
-        setFlaggedRows(data.flagged);
+        setMetrics({
+          totalUsers: data.totalUsers,
+          totalBalance: data.totalBalance,
+          volume24h: data.volume24h,
+          pendingReviews: data.pendingReviews
+        });
+        setFlaggedRows(data.recentTransactions);
         setLoading(false);
       })
       .catch((err) => {
@@ -95,10 +100,10 @@ export default function AdminDashboard() {
 
   // Combine static UI config with dynamic backend numbers
   const KPIS = [
-    { label: "Total Active Users", value: stats.totalUsers, delta: "+2.4%", up: true, icon: UserCheck },
-    { label: "Total Platform Balance", value: stats.totalBalance, delta: "+0.8%", up: true, icon: Wallet },
-    { label: "24h Transaction Volume", value: stats.volume24h, delta: "-1.2%", up: false, icon: Activity },
-    { label: "Pending Risk Reviews", value: stats.pendingReviews, delta: "+11.0%", up: false, icon: AlertTriangle, warn: true },
+    { label: "Total Active Users", value: metrics?.totalUsers ?? 0, delta: "+2.4%", up: true, icon: UserCheck },
+    { label: "Total Platform Balance", value: `৳${metrics?.totalBalance !== undefined ? metrics.totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '---'}`, delta: "+0.8%", up: true, icon: Wallet },
+    { label: "24h Transaction Volume", value: `৳${metrics?.volume24h !== undefined ? metrics.volume24h.toLocaleString('en-IN', { minimumFractionDigits: 0 }) : '---'}`, delta: "-1.2%", up: false, icon: Activity },
+    { label: "Pending Risk Reviews", value: metrics?.pendingReviews ?? 0, delta: "+11.0%", up: false, icon: AlertTriangle, warn: true },
   ];
 
   const filteredRows = useMemo(() => {
@@ -142,7 +147,13 @@ export default function AdminDashboard() {
                   >
                     <Icon size={15} strokeWidth={2} />
                     <span className="flex-1 text-left">{item.label}</span>
-                    {item.badge && (
+                    {item.label === "Fraud Alerts" ? (
+                      metrics?.pendingReviews > 0 && (
+                        <span className="text-[10px] font-semibold px-1.5 py-[1px] rounded-full bg-[#F0575C]/15 text-[#F0575C]">
+                          {metrics.pendingReviews}
+                        </span>
+                      )
+                    ) : item.badge && (
                       <span className="text-[10px] font-semibold px-1.5 py-[1px] rounded-full bg-[#F0575C]/15 text-[#F0575C]">
                         {item.badge}
                       </span>
@@ -257,7 +268,9 @@ export default function AdminDashboard() {
                               </span>
                             </td>
                             <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                              <button className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[#0FAE71] hover:text-[#0C8F5D] border border-[#0FAE71]/25 hover:border-[#0FAE71]/45 rounded-md px-2.5 py-1">
+                              <button 
+                                onClick={() => router.push(`/admin/ledger?query=${r.id}`)}
+                                className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[#0FAE71] hover:text-[#0C8F5D] border border-[#0FAE71]/25 hover:border-[#0FAE71]/45 rounded-md px-2.5 py-1">
                                 Investigate
                               </button>
                             </td>

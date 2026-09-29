@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from "react";
-import { useRouter, usePathname } from "next/navigation";
-import { LayoutGrid, Users, BookOpen, ShieldAlert, Settings, Search, Sun, Moon, ArrowLeft, ArrowRight } from "lucide-react";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { LayoutGrid, Users, BookOpen, ShieldAlert, Settings, Search, Sun, Moon, ArrowLeft, ArrowRight, RotateCcw } from "lucide-react";
 
 const NAV_ITEMS = [
   { label: "Overview", icon: LayoutGrid, href: "/admin" },
@@ -19,11 +19,13 @@ const STATUS_STYLE: Record<string, string> = {
   CANCELLED: "text-[#8B8D92] bg-white/5 ring-1 ring-inset ring-white/10",
 };
 
-export default function GlobalLedgerPage() {
+function LedgerContent() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const initialQuery = searchParams.get('query') || '';
   const [dark, setDark] = useState(true);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -41,15 +43,44 @@ export default function GlobalLedgerPage() {
       });
   }, [router]);
 
+  const handleReverse = async (transaction_id: string) => {
+    if (!window.confirm("Are you sure you want to reverse this transaction? This will instantly move funds back to the sender.")) {
+      return;
+    }
+
+    const token = sessionStorage.getItem("token");
+    try {
+      const res = await fetch(`http://localhost:5001/api/admin/transactions/${transaction_id}/reverse`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        setTransactions(txns => 
+          txns.map(t => t.transaction_id === transaction_id ? { ...t, transaction_status: 'CANCELLED' } : t)
+        );
+        alert("Transaction successfully reversed.");
+      } else {
+        alert("Failed to reverse: " + (data.error || "Unknown error"));
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error reversing transaction.");
+    }
+  };
+
   const filteredTxns = useMemo(() => {
     if (!query.trim()) return transactions;
-    const q = query.toLowerCase();
-    return transactions.filter(t => 
-      t.transaction_id.toLowerCase().includes(q) ||
-      t.reference_no?.toLowerCase().includes(q) ||
-      t.sender_phone.includes(q) ||
-      t.receiver_phone.includes(q)
-    );
+    const cleanInput = query.replace(/^TXN-/i, '').toLowerCase();
+    return transactions.filter(t => {
+      const cleanId = t.transaction_id.replace(/^TXN-/i, '').toLowerCase();
+      return cleanId.includes(cleanInput) ||
+        t.reference_no?.toLowerCase().includes(cleanInput) ||
+        t.sender_phone.includes(cleanInput) ||
+        t.receiver_phone.includes(cleanInput);
+    });
   }, [query, transactions]);
 
   return (
@@ -123,13 +154,14 @@ export default function GlobalLedgerPage() {
                       <th className="px-4 py-3 font-medium whitespace-nowrap text-right">Amount</th>
                       <th className="px-4 py-3 font-medium whitespace-nowrap text-right">Fee</th>
                       <th className="px-4 py-3 font-medium whitespace-nowrap">Status</th>
+                      <th className="px-4 py-3 font-medium whitespace-nowrap text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr><td colSpan={7} className="p-8 text-center text-[#8B8D92]">Synchronizing global ledger...</td></tr>
+                      <tr><td colSpan={8} className="p-8 text-center text-[#8B8D92]">Synchronizing global ledger...</td></tr>
                     ) : filteredTxns.length === 0 ? (
-                      <tr><td colSpan={7} className="p-8 text-center text-[#8B8D92]">No transactions found</td></tr>
+                      <tr><td colSpan={8} className="p-8 text-center text-[#8B8D92]">No transactions found</td></tr>
                     ) : filteredTxns.map((t) => (
                       <tr key={t.transaction_id} className="border-b border-black/[0.04] dark:border-white/[0.04] last:border-0 hover:bg-black/[0.015] dark:hover:bg-white/[0.02]">
                         <td className="px-4 py-3 whitespace-nowrap">
@@ -167,6 +199,17 @@ export default function GlobalLedgerPage() {
                             {t.transaction_status}
                           </span>
                         </td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          {t.transaction_status === 'SUCCESS' && (
+                            <button 
+                              onClick={() => handleReverse(t.transaction_id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11.5px] font-medium text-[#F0575C] hover:bg-[#F0575C]/10 border border-[#F0575C]/20 transition-colors"
+                            >
+                              <RotateCcw size={12} />
+                              Reverse
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -177,5 +220,13 @@ export default function GlobalLedgerPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function GlobalLedgerPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LedgerContent />
+    </Suspense>
   );
 }

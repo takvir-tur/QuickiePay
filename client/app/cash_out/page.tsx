@@ -24,6 +24,7 @@ export default function CashOutPage() {
   const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [agentLookupError, setAgentLookupError] = useState("");
+  const [cashOutFeePct, setCashOutFeePct] = useState(0);
 
   // Fetch logged-in user's balance
   useEffect(() => {
@@ -56,6 +57,18 @@ export default function CashOutPage() {
         }
       })
       .catch((err) => console.error("Error fetching balance:", err));
+
+    // Fetch system configs
+    fetch("http://localhost:5001/api/system/configs", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.CASH_OUT_FEE_PCT) {
+          setCashOutFeePct(Number(data.CASH_OUT_FEE_PCT));
+        }
+      })
+      .catch((err) => console.error("Error fetching configs:", err));
   }, [router]);
 
   // Real-time Agent lookup when 11-digit phone number is entered
@@ -96,9 +109,7 @@ export default function CashOutPage() {
   }, [agentPhone]);
 
   const numericAmount = Number(amount) || 0;
-  // Use agent's commission rate or default 1.5%
-  const commissionRate = agentInfo ? agentInfo.commissionRate : 1.50;
-  const charge = numericAmount > 0 ? Number(((numericAmount * commissionRate) / 100).toFixed(2)) : 0;
+  const charge = numericAmount > 0 ? Number(((numericAmount * cashOutFeePct) / 100).toFixed(2)) : 0;
   const totalDeduction = numericAmount > 0 ? Number((numericAmount + charge).toFixed(2)) : 0;
   const balanceNum = parseFloat(availableBalance) || 0;
   const isInsufficient = numericAmount > 0 && totalDeduction > balanceNum;
@@ -147,7 +158,7 @@ export default function CashOutPage() {
       amount: numericAmount.toFixed(2),
       charge: charge.toFixed(2),
       total: totalDeduction.toFixed(2),
-      rate: commissionRate.toString(),
+      rate: cashOutFeePct.toString(),
       note: note.trim(),
     });
 
@@ -222,7 +233,7 @@ export default function CashOutPage() {
                       {agentInfo.businessName || agentInfo.name}
                     </p>
                     <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-                      Active Agent · Charge Rate: {agentInfo.commissionRate}%
+                      Active Agent · Charge Rate: {cashOutFeePct}%
                     </p>
                   </div>
                 </div>
@@ -305,7 +316,7 @@ export default function CashOutPage() {
                 </div>
 
                 <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                  <span>Cash Out Charge ({commissionRate}%)</span>
+                  <span>Cash Out Charge ({cashOutFeePct}%)</span>
                   <span className="font-semibold text-amber-600 dark:text-amber-400">
                     +৳{charge.toFixed(2)}
                   </span>

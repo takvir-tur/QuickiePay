@@ -40,7 +40,6 @@ export default function FraudAlertsPage() {
       });
   }, [router]);
 
-  // Instantly freeze an account directly from the alert queue
   const freezeAccount = async (userId: string) => {
     const confirmed = window.confirm("Are you sure you want to freeze this account immediately?");
     if (!confirmed) return;
@@ -55,6 +54,20 @@ export default function FraudAlertsPage() {
       alert("Account successfully frozen.");
       // Optionally remove from alert list or visually mark as handled
       setAlerts(alerts.filter(a => a.user_id !== userId));
+    }
+  };
+
+  const handleIgnore = async (transaction_id: string) => {
+    const token = sessionStorage.getItem("token");
+    const res = await fetch(`http://localhost:5001/api/admin/alerts/${transaction_id}/ignore`, {
+      method: 'PATCH',
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    if (res.ok) {
+      setAlerts(prev => prev.filter(alert => alert.transaction_id !== transaction_id));
+    } else {
+      alert("Failed to ignore alert");
     }
   };
 
@@ -94,7 +107,13 @@ export default function FraudAlertsPage() {
                 >
                   <Icon size={15} strokeWidth={2} />
                   <span className="flex-1 text-left">{item.label}</span>
-                  {item.badge && (
+                  {item.label === "Fraud Alerts" ? (
+                    alerts.length > 0 && (
+                      <span className="text-[10px] font-semibold px-1.5 py-[1px] rounded-full bg-[#F0575C]/15 text-[#F0575C]">
+                        {alerts.length}
+                      </span>
+                    )
+                  ) : item.badge && (
                     <span className="text-[10px] font-semibold px-1.5 py-[1px] rounded-full bg-[#F0575C]/15 text-[#F0575C]">
                       {item.badge}
                     </span>
@@ -170,13 +189,21 @@ export default function FraudAlertsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <button 
-                            onClick={() => freezeAccount(a.user_id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11.5px] font-medium text-[#F0575C] hover:bg-[#F0575C]/10 border border-[#F0575C]/20 transition-colors"
-                          >
-                            <Lock size={12} />
-                            Freeze Account
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => handleIgnore(a.transaction_id)}
+                              className="inline-flex items-center px-3 py-1.5 rounded-md text-[11.5px] font-medium text-[#8B8D92] hover:text-[#16171A] dark:hover:text-[#E8E9EA] border border-transparent hover:border-black/[0.06] dark:hover:border-white/[0.07] hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+                            >
+                              Ignore
+                            </button>
+                            <button 
+                              onClick={() => freezeAccount(a.user_id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11.5px] font-medium text-[#F0575C] hover:bg-[#F0575C]/10 border border-[#F0575C]/20 transition-colors"
+                            >
+                              <Lock size={12} />
+                              Freeze Account
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
