@@ -39,7 +39,18 @@ export default function BillerDashboard() {
   const [activeNav, setActiveNav] = useState("Dashboard");
   const router = useRouter();
 
-  const [billerData, setBillerData] = useState({
+interface Service {
+  organization_name: string;
+  service_name: string;
+}
+
+interface BillerData {
+  full_name: string;
+  balance: string;
+  services: Service[];
+}
+
+  const [billerData, setBillerData] = useState<BillerData>({
     full_name: "Loading...",
     balance: "0.00",
     services: []
@@ -183,7 +194,7 @@ export default function BillerDashboard() {
     <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3">
       {billerData.services?.map((svc, idx) => (
         <div key={idx} className="rounded-3xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
-          <p className="text-base font-semibold">{svc.organization_name}</p>
+          <p className="text-base font-semibold">{svc.organization_name }</p>
           <p className="mt-1 text-xs text-purple-600 uppercase font-medium">{svc.service_name}</p>
         </div>
       ))}
