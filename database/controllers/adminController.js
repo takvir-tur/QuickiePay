@@ -27,11 +27,12 @@ async function getAdminDashboardData(req, res) {
           t.transaction_type, 
           t.amount, 
           t.transaction_status,
-          u.full_name as receiver_name,
-          u.phone_number as receiver_phone
+          COALESCE(mrt.operator, u.full_name) as receiver_name,
+          COALESCE(mrt.phone_number, u.phone_number) as receiver_phone
         FROM transactions t
-        JOIN accounts a ON t.receiver_account_id = a.account_id
-        JOIN users u ON a.user_id = u.user_id
+        LEFT JOIN accounts a ON t.receiver_account_id = a.account_id
+        LEFT JOIN users u ON a.user_id = u.user_id
+        LEFT JOIN mobile_recharge_transactions mrt ON t.reference_no = mrt.reference_no
         ORDER BY t.transaction_time DESC
         LIMIT 10
       `)
@@ -128,13 +129,14 @@ async function getGlobalLedger(req, res) {
         t.transaction_time,
         su.full_name AS sender_name,
         su.phone_number AS sender_phone,
-        ru.full_name AS receiver_name,
-        ru.phone_number AS receiver_phone
+        COALESCE(mrt.operator, ru.full_name) AS receiver_name,
+        COALESCE(mrt.phone_number, ru.phone_number) AS receiver_phone
       FROM transactions t
       JOIN accounts sa ON t.sender_account_id = sa.account_id
       JOIN users su ON sa.user_id = su.user_id
-      JOIN accounts ra ON t.receiver_account_id = ra.account_id
-      JOIN users ru ON ra.user_id = ru.user_id
+      LEFT JOIN accounts ra ON t.receiver_account_id = ra.account_id
+      LEFT JOIN users ru ON ra.user_id = ru.user_id
+      LEFT JOIN mobile_recharge_transactions mrt ON t.reference_no = mrt.reference_no
       ORDER BY t.transaction_time DESC
     `);
     

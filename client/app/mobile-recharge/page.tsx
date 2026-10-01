@@ -5,6 +5,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Check, Smartphone, Wallet } from "lucide-react";
 
+const operatorPrefixes: Record<string, string[]> = {
+  Grameenphone: ["017", "013"],
+  Banglalink: ["019", "014"],
+  Robi: ["018"],
+  Airtel: ["016"],
+  Teletalk: ["015"],
+};
+
 const operators = [
   { name: "Grameenphone", mark: "GP", style: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-300", selected: "border-sky-600 ring-2 ring-sky-600/15 dark:border-sky-400" },
   { name: "Robi", mark: "robi", style: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300", selected: "border-rose-600 ring-2 ring-rose-600/15 dark:border-rose-400" },
@@ -18,7 +26,7 @@ const amountPresets = [20, 50, 100, 200, 500, 1000];
 export default function MobileRechargePage() {
   const router = useRouter();
   const [operator, setOperator] = useState<string>(operators[0].name);
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState(operatorPrefixes[operators[0].name][0]);
   const [amount, setAmount] = useState("");
   const [availableBalance, setAvailableBalance] = useState(0);
   const [loadingBalance, setLoadingBalance] = useState(true);
@@ -55,8 +63,41 @@ export default function MobileRechargePage() {
       .finally(() => setLoadingBalance(false));
   }, [router]);
 
+  const activePrefix = operatorPrefixes[operator]?.[0] ?? "01";
+  const allPrefixes = operatorPrefixes[operator] ?? ["01"];
+
+  // When operator changes, auto-set the prefix and keep compatible suffix
+  function handleOperatorChange(newOperator: string) {
+    const newPrefixes = operatorPrefixes[newOperator] ?? ["01"];
+    const defaultPrefix = newPrefixes[0];
+    // If the current number already matches one of the new operator's prefixes, keep it
+    const alreadyMatches = newPrefixes.some((p) => phoneNumber.startsWith(p));
+    if (!alreadyMatches) {
+      // Carry over the suffix (digits after the old prefix) if present
+      const oldPrefixes = operatorPrefixes[operator] ?? ["01"];
+      const matchedOld = oldPrefixes.find((p) => phoneNumber.startsWith(p));
+      const suffix = matchedOld ? phoneNumber.slice(matchedOld.length) : phoneNumber.slice(3);
+      setPhoneNumber(defaultPrefix + suffix.slice(0, 11 - defaultPrefix.length));
+    }
+    setOperator(newOperator);
+  }
+
+  // Prevent the user from editing the locked prefix
+  function handlePhoneChange(raw: string) {
+    const digits = raw.replace(/\D/g, "").slice(0, 11);
+    // If the user tried to delete/change the prefix, force it back
+    if (!allPrefixes.some((p) => digits.startsWith(p.slice(0, digits.length)))) {
+      // Keep prefix intact, replace rest with whatever new digits came after
+      const suffix = digits.slice(activePrefix.length);
+      setPhoneNumber(activePrefix + suffix.slice(0, 11 - activePrefix.length));
+      return;
+    }
+    setPhoneNumber(digits);
+  }
+
   const numericAmount = Number(amount);
-  const validPhone = /^01\d{9}$/.test(phoneNumber);
+  const prefixRegex = new RegExp(`^(${allPrefixes.join("|")})\\d{${11 - activePrefix.length}}$`);
+  const validPhone = prefixRegex.test(phoneNumber);
   const validAmount = Number.isInteger(numericAmount) && numericAmount > 0 && numericAmount <= 10000;
   const canContinue = validPhone && validAmount && numericAmount <= availableBalance && !loadingBalance;
 
@@ -115,7 +156,7 @@ export default function MobileRechargePage() {
                       key={item.name}
                       type="button"
                       aria-pressed={isSelected}
-                      onClick={() => setOperator(item.name)}
+                      onClick={() => handleOperatorChange(item.name)}
                       className={`flex min-h-20 items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors ${item.style} ${isSelected ? item.selected : "hover:border-gray-400 dark:hover:border-gray-600"}`}
                     >
                       <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-white/80 text-xs font-bold dark:bg-black/20">
@@ -132,21 +173,29 @@ export default function MobileRechargePage() {
               <label htmlFor="phoneNumber" className="text-sm font-semibold">Mobile number</label>
               <div className="mt-2 flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 focus-within:border-orange-500 dark:border-gray-800 dark:bg-gray-900">
                 <span className="border-r border-gray-300 pr-3 text-sm font-semibold text-gray-500 dark:border-gray-700 dark:text-gray-400">BD</span>
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 select-none">{activePrefix}</span>
                 <input
                   id="phoneNumber"
                   type="tel"
                   inputMode="numeric"
                   autoComplete="tel-national"
-                  maxLength={11}
-                  value={phoneNumber}
-                  onChange={(event) => setPhoneNumber(event.target.value.replace(/\D/g, "").slice(0, 11))}
-                  placeholder="01XXXXXXXXX"
+                  maxLength={11 - activePrefix.length}
+                  value={phoneNumber.slice(activePrefix.length)}
+                  onChange={(event) => handlePhoneChange(activePrefix + event.target.value.replace(/\D/g, ""))}
+                  placeholder={"X".repeat(11 - activePrefix.length)}
                   aria-describedby="phoneHelp"
                   className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
                 />
               </div>
-              <p id="phoneHelp" className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Enter an 11-digit Bangladesh mobile number starting with 01.
+              <p id="phoneHelp" className={`mt-2 text-xs ${
+                phoneNumber.length > activePrefix.length && !validPhone
+                  ? "font-medium text-red-600 dark:text-red-400"
+                  : "text-gray-500 dark:text-gray-400"
+              }`}>
+                {allPrefixes.length > 1
+                  ? `${operator} numbers start with ${allPrefixes.join(" or ")}. Enter the remaining ${11 - activePrefix.length} digits.`
+                  : `${operator} numbers start with ${activePrefix}. Enter the remaining ${11 - activePrefix.length} digits.`
+                }
               </p>
             </div>
 

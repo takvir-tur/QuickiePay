@@ -480,6 +480,13 @@ async function mobileRecharge(req, res) {
   const userId = req.user.user_id;
   const { operator, phone_number, amount, pin } = req.body;
   const supportedOperators = ['Grameenphone', 'Robi', 'Teletalk', 'Banglalink', 'Airtel'];
+  const operatorPrefixes = {
+    Grameenphone: [/^013/, /^017/],
+    Banglalink:   [/^019/, /^014/],
+    Robi:         [/^018/],
+    Airtel:       [/^016/],
+    Teletalk:     [/^015/],
+  };
   const numericAmount = Number(amount);
 
   if (!supportedOperators.includes(operator)) {
@@ -487,6 +494,13 @@ async function mobileRecharge(req, res) {
   }
   if (typeof phone_number !== 'string' || !/^01\d{9}$/.test(phone_number)) {
     return res.status(400).json({ error: 'Enter a valid 11-digit Bangladesh mobile number' });
+  }
+  // Enforce operator-specific prefix on the server side
+  const allowedPrefixes = operatorPrefixes[operator] || [];
+  if (!allowedPrefixes.some(re => re.test(phone_number))) {
+    return res.status(400).json({
+      error: `Phone number does not match ${operator} prefix. Expected: ${allowedPrefixes.map(r => r.source.replace('^', '')).join(' or ')}`
+    });
   }
   if (!Number.isInteger(numericAmount) || numericAmount <= 0 || numericAmount > 10000) {
     return res.status(400).json({ error: 'Recharge amount must be a whole number between ৳1 and ৳10,000' });
@@ -524,10 +538,35 @@ async function mobileRecharge(req, res) {
 
     const accountId = accountResult.rows[0].account_id;
     const referenceNo = `RCH${Date.now().toString(36).toUpperCase()}${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+
+    // Look up the designated System/Admin account as the receiver for double-entry integrity.
+    // Exclude the sender's own account to satisfy CHECK(sender_account_id <> receiver_account_id).
+    const systemAccResult = await client.query(
+      `SELECT account_id FROM accounts
+       WHERE account_id != $1
+       ORDER BY (account_type = 'ADMIN') DESC
+       LIMIT 1`,
+      [accountId]
+    );
+    if (systemAccResult.rows.length === 0) {
+      throw new Error('No system account available for mobile recharge settlement');
+    }
+    const systemAccountId = systemAccResult.rows[0].account_id;
+
     const balanceResult = await client.query(
       'UPDATE accounts SET balance = balance - $1 WHERE account_id = $2 RETURNING balance',
       [numericAmount, accountId]
     );
+
+    // Insert into the main transactions table for admin panel / global ledger visibility
+    await client.query(
+      `INSERT INTO transactions
+        (reference_no, transaction_type, sender_account_id, receiver_account_id, amount, fee, transaction_status, remarks)
+       VALUES ($1, 'MOBILE_RECHARGE', $2, $3, $4, 0, 'SUCCESS', $5)`,
+      [referenceNo, accountId, systemAccountId, numericAmount, `Mobile recharge to ${operator} - ${phone_number}`]
+    );
+
+    // Insert into the mobile-recharge-specific detail table
     await client.query(
       `INSERT INTO mobile_recharge_transactions
         (account_id, reference_no, operator, phone_number, amount)

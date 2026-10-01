@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuickiePay — Project Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{font-family:'Inter',sans-serif;background:#0a0e1a;color:#e0e4ef;line-height:1.7;overflow-x:hidden}
+    body::before{content:'';position:fixed;top:0;left:0;width:100vw;height:100vh;background:radial-gradient(ellipse 80% 60% at 20% 10%,rgba(99,102,241,.12) 0%,transparent 60%),radial-gradient(ellipse 60% 50% at 80% 90%,rgba(236,72,153,.08) 0%,transparent 60%),radial-gradient(ellipse 50% 40% at 50% 50%,rgba(16,185,129,.06) 0%,transparent 50%);pointer-events:none;z-index:-1}
+    .hero{text-align:center;padding:80px 20px 60px}
+    .hero-badge{display:inline-block;padding:6px 18px;border-radius:999px;background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);font-size:.75rem;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#818cf8;margin-bottom:20px}
+    .hero h1{font-size:clamp(2.5rem,6vw,4rem);font-weight:900;background:linear-gradient(135deg,#818cf8 0%,#c084fc 40%,#f472b6 70%,#fb923c 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.15;margin-bottom:16px}
+    .hero p{font-size:1.1rem;color:#94a3b8;max-width:600px;margin:0 auto 30px}
+    .hero-meta{display:flex;gap:30px;justify-content:center;flex-wrap:wrap;font-size:.85rem;color:#64748b}
+    .hero-meta span{display:flex;align-items:center;gap:6px}
+    .hero-meta .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+    .dot-green{background:#10b981}.dot-blue{background:#6366f1}.dot-pink{background:#ec4899}
+    nav{position:sticky;top:0;z-index:100;background:rgba(10,14,26,.85);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.06);padding:0 20px}
+    nav ul{list-style:none;display:flex;gap:4px;max-width:1100px;margin:0 auto;overflow-x:auto;padding:8px 0;scrollbar-width:none}
+    nav ul::-webkit-scrollbar{display:none}
+    nav a{text-decoration:none;color:#94a3b8;font-size:.8rem;font-weight:500;padding:8px 16px;border-radius:8px;white-space:nowrap;transition:all .2s}
+    nav a:hover{color:#e0e4ef;background:rgba(99,102,241,.12)}
+    .container{max-width:1100px;margin:0 auto;padding:0 24px}
+    section{padding:70px 0}
+    section+section{border-top:1px solid rgba(255,255,255,.04)}
+    .section-label{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#6366f1;margin-bottom:10px}
+    .section-title{font-size:clamp(1.6rem,3.5vw,2.2rem);font-weight:800;color:#f1f5f9;margin-bottom:12px;line-height:1.25}
+    .section-desc{font-size:1rem;color:#94a3b8;max-width:700px;margin-bottom:40px}
+    .card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:32px;margin-bottom:24px;transition:border-color .3s}
+    .card:hover{border-color:rgba(99,102,241,.2)}
+    .card h3{font-size:1.15rem;font-weight:700;color:#f1f5f9;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+    .card h3 .icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}
+    .card p,.card li{color:#94a3b8;font-size:.92rem}
+    .card ul{padding-left:20px}.card li{margin-bottom:6px}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+    @media(max-width:800px){.grid-2,.grid-3{grid-template-columns:1fr}}
+    .code-block{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.8;color:#c9d1d9;margin:16px 0}
+    .code-block .kw{color:#ff7b72}.code-block .fn{color:#d2a8ff}.code-block .str{color:#a5d6ff}.code-block .cm{color:#6e7681;font-style:italic}.code-block .num{color:#ffa657}
+    .schema-table{width:100%;border-collapse:separate;border-spacing:0;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.08);margin:16px 0;font-size:.85rem}
+    .schema-table th{background:rgba(99,102,241,.1);color:#c4b5fd;padding:12px 16px;text-align:left;font-weight:600;font-size:.75rem;letter-spacing:.5px;text-transform:uppercase}
+    .schema-table td{padding:10px 16px;border-top:1px solid rgba(255,255,255,.04);color:#cbd5e1}
+    .schema-table tr:hover td{background:rgba(255,255,255,.02)}
+    .flow-diagram{display:flex;flex-direction:column;gap:0;align-items:center;margin:32px 0}
+    .flow-step{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px 28px;max-width:600px;width:100%;text-align:center;position:relative}
+    .flow-step .step-num{position:absolute;top:-14px;left:50%;transform:translateX(-50%);background:#6366f1;color:white;width:28px;height:28px;border-radius:50%;font-size:.75rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+    .flow-step h4{color:#e2e8f0;font-size:.95rem;font-weight:700;margin-bottom:6px}
+    .flow-step p{color:#94a3b8;font-size:.82rem}
+    .flow-arrow{color:#6366f1;font-size:1.4rem;padding:6px 0;opacity:.6}
+    .er-container{display:flex;flex-wrap:wrap;gap:16px;justify-content:center;margin:32px 0}
+    .er-entity{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;min-width:180px;overflow:hidden;transition:transform .2s,border-color .3s}
+    .er-entity:hover{transform:translateY(-4px);border-color:rgba(99,102,241,.3)}
+    .er-entity-header{padding:10px 16px;font-weight:700;font-size:.82rem;letter-spacing:.5px;text-align:center}
+    .er-entity-body{padding:8px 16px 14px;font-size:.75rem;color:#94a3b8}
+    .er-entity-body div{padding:3px 0;border-top:1px solid rgba(255,255,255,.04)}
+    .er-entity-body div:first-child{border-top:none}
+    .er-pk{color:#fbbf24}.er-fk{color:#818cf8}
+    .er-super .er-entity-header{background:rgba(99,102,241,.15);color:#a5b4fc}
+    .er-sub .er-entity-header{background:rgba(16,185,129,.12);color:#6ee7b7}
+    .er-txn .er-entity-header{background:rgba(251,146,60,.12);color:#fdba74}
+    .er-audit .er-entity-header{background:rgba(236,72,153,.12);color:#f9a8d4}
+    .er-config .er-entity-header{background:rgba(14,165,233,.12);color:#7dd3fc}
+    .highlight-box{background:linear-gradient(135deg,rgba(99,102,241,.08) 0%,rgba(236,72,153,.06) 100%);border:1px solid rgba(99,102,241,.15);border-radius:14px;padding:24px 28px;margin:24px 0}
+    .highlight-box h4{color:#c4b5fd;font-size:.95rem;margin-bottom:8px}
+    .highlight-box p{color:#94a3b8;font-size:.88rem}
+    .layer-stack{display:flex;flex-direction:column;gap:2px;max-width:650px;margin:32px auto}
+    .layer{padding:20px 28px;border-radius:12px;display:flex;align-items:center;gap:16px;transition:transform .2s}
+    .layer:hover{transform:scale(1.02)}
+    .layer-icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.2rem;flex-shrink:0}
+    .layer h4{font-size:.95rem;font-weight:700}.layer p{font-size:.8rem;color:#94a3b8}
+    .layer-1{background:rgba(99,102,241,.10)}.layer-1 .layer-icon{background:rgba(99,102,241,.2)}.layer-1 h4{color:#a5b4fc}
+    .layer-2{background:rgba(16,185,129,.08)}.layer-2 .layer-icon{background:rgba(16,185,129,.2)}.layer-2 h4{color:#6ee7b7}
+    .layer-3{background:rgba(251,146,60,.08)}.layer-3 .layer-icon{background:rgba(251,146,60,.2)}.layer-3 h4{color:#fdba74}
+    .layer-4{background:rgba(236,72,153,.08)}.layer-4 .layer-icon{background:rgba(236,72,153,.2)}.layer-4 h4{color:#f9a8d4}
+    .layer-arrow{text-align:center;color:#475569;font-size:1.1rem;padding:4px 0}
+    .txn-type-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:24px 0}
+    .txn-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:20px;text-align:center;transition:border-color .3s,transform .2s}
+    .txn-card:hover{border-color:rgba(99,102,241,.25);transform:translateY(-3px)}
+    .txn-card .emoji{font-size:2rem;margin-bottom:10px}.txn-card h4{color:#e2e8f0;font-size:.9rem;font-weight:700;margin-bottom:6px}.txn-card p{color:#64748b;font-size:.78rem}
+    code{font-family:'JetBrains Mono',monospace;background:rgba(99,102,241,.12);padding:2px 8px;border-radius:5px;font-size:.82rem;color:#c4b5fd}
+    strong{color:#e2e8f0}
+    footer{text-align:center;padding:50px 20px;color:#475569;font-size:.8rem;border-top:1px solid rgba(255,255,255,.04)}
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-badge">DBMS Course Project</div>
+  <h1>QuickiePay</h1>
+  <p>A full-stack Mobile Financial Service (MFS) application — modeled after bKash/Nagad — built with PostgreSQL, Node.js/Express, and Next.js.</p>
+  <div class="hero-meta">
+    <span><span class="dot dot-green"></span> PostgreSQL Database</span>
+    <span><span class="dot dot-blue"></span> Node.js / Express API</span>
+    <span><span class="dot dot-pink"></span> Next.js Frontend</span>
+  </div>
+</header>
+
+<nav>
+  <ul>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#schema">Schema / ER</a></li>
+    <li><a href="#specialization">Specialization</a></li>
+    <li><a href="#transactions">Transactions</a></li>
+    <li><a href="#flow-sendmoney">Send Money Flow</a></li>
+    <li><a href="#flow-cashout">Cash Out Flow</a></li>
+    <li><a href="#auth">Auth &amp; Security</a></li>
+    <li><a href="#admin">Admin Panel</a></li>
+    <li><a href="#audit">Audit Logs</a></li>
+    <li><a href="#config">System Config</a></li>
+    <li><a href="#concurrency">Concurrency</a></li>
+    <li><a href="#api">API Map</a></li>
+  </ul>
+</nav>
+
+<main class="container">
+
+<!-- ========== 1. OVERVIEW ========== -->
+<section id="overview">
+  <span class="section-label">Section 01</span>
+  <h2 class="section-title">What is QuickiePay?</h2>
+  <p class="section-desc">QuickiePay is a <strong>Mobile Financial Service (MFS)</strong> platform — similar to bKash or Nagad — designed as a database-driven academic project. It demonstrates core DBMS concepts: normalization, referential integrity, transactions (ACID), role-based access, and auditing.</p>
+  <div class="grid-3">
+    <div class="card">
+      <h3><span class="icon" style="background:rgba(99,102,241,.15);color:#818cf8;">📱</span> Five User Roles</h3>
+      <p>Personal (Customer), Agent, Merchant, Biller, and Admin — each with dedicated tables following a <strong>Specialization/Generalization</strong> hierarchy.</p>
+    </div>
+    <div class="card">
+      <h3><span class="icon" style="background:rgba(16,185,129,.12);color:#34d399;">💸</span> Seven Transaction Types</h3>
+      <p>Send Money, Cash In, Cash Out, Merchant Payment, Bill Payment, Add Money, and Mobile Recharge — all recorded atomically.</p>
+    </div>
+    <div class="card">
+      <h3><span class="icon" style="background:rgba(236,72,153,.12);color:#f472b6;">🛡️</span> Admin &amp; Audit</h3>
+      <p>Super Admins can freeze accounts, reverse transactions, manage fraud alerts, and every sensitive action is logged to <code>audit_logs</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 2. ARCHITECTURE ========== -->
+<section id="architecture">
+  <span class="section-label">Section 02</span>
+  <h2 class="section-title">System Architecture</h2>
+  <p class="section-desc">The project follows a classic <strong>3-tier architecture</strong> with a clear separation between the presentation layer (Next.js), business logic layer (Express), and the data layer (PostgreSQL).</p>
+  <div class="layer-stack">
+    <div class="layer layer-1">
+      <div class="layer-icon">🖥️</div>
+      <div><h4>Presentation Layer — Next.js (React)</h4><p>The <code>client/</code> folder. Pages for login, registration, dashboard, send money, cash-in/out, admin panel, merchant portal, biller portal. Uses App Router.</p></div>
+    </div>
+    <div class="layer-arrow">↕</div>
+    <div class="layer layer-2">
+      <div class="layer-icon">⚡</div>
+      <div><h4>API / Business Logic Layer — Express.js</h4><p>The <code>database/</code> folder. RESTful endpoints in <code>routes/</code> call handler functions in <code>controllers/</code>. JWT middleware guards all protected routes.</p></div>
+    </div>
+    <div class="layer-arrow">↕</div>
+    <div class="layer layer-3">
+      <div class="layer-icon">🔌</div>
+      <div><h4>Connection Pool — node-postgres (pg)</h4><p><code>db_connection.js</code> creates a <code>Pool</code> using <code>DATABASE_URL</code> from <code>.env</code>. Connections are reused automatically. SSL is enabled for cloud databases.</p></div>
+    </div>
+    <div class="layer-arrow">↕</div>
+    <div class="layer layer-4">
+      <div class="layer-icon">🐘</div>
+      <div><h4>Data Layer — PostgreSQL</h4><p>15+ tables defined in <code>SQL/schema.sql</code>. Uses UUIDs, ENUM types, CHECK constraints, foreign keys with cascade/restrict rules, and indexed columns.</p></div>
+    </div>
+  </div>
+  <div class="highlight-box">
+    <h4>📂 How the Folders Map to the Architecture</h4>
+    <p><code>client/app/</code> → Next.js pages that make <code>fetch()</code> calls to the Express API.<br/><code>database/routes/</code> → Express Router files that define URL patterns like <code>/api/auth/login</code>.<br/><code>database/controllers/</code> → Handler functions containing the actual SQL queries via <code>pool.query()</code>.<br/><code>database/middleware/</code> → <code>verifyToken</code> decodes JWTs; <code>verifyAdmin</code> checks the role.<br/><code>database/utils/</code> → Shared helpers like <code>configHelper.js</code> (reads system_settings) and <code>auditLogger.js</code> (writes audit_logs).</p>
+  </div>
+</section>
+
+<!-- ========== 3. SCHEMA ========== -->
+<section id="schema">
+  <span class="section-label">Section 03</span>
+  <h2 class="section-title">Database Schema — ER Overview</h2>
+  <p class="section-desc">The database uses <strong>Specialization/Generalization (Total, Disjoint)</strong> for users, and <strong>Supertype/Subtype</strong> for transactions. All primary keys are UUID v4.</p>
+  <h3 style="color:#f1f5f9;font-size:1.1rem;margin:16px 0;">User Entity Tables</h3>
+  <div class="er-container">
+    <div class="er-entity er-super"><div class="er-entity-header">USERS (Supertype)</div><div class="er-entity-body"><div><span class="er-pk">🔑 user_id</span> UUID PK</div><div>full_name VARCHAR(100)</div><div>phone_number VARCHAR(15) UNIQUE</div><div>email VARCHAR(100) UNIQUE</div><div>pin_hash TEXT</div><div>national_id VARCHAR(25) UNIQUE</div><div>created_at TIMESTAMP</div></div></div>
+    <div class="er-entity er-super"><div class="er-entity-header">ACCOUNTS (Wallets)</div><div class="er-entity-body"><div><span class="er-pk">🔑 account_id</span> UUID PK</div><div><span class="er-fk">🔗 user_id</span> FK → users</div><div>account_type ENUM</div><div>balance NUMERIC(15,2)</div></div></div>
+    <div class="er-entity er-sub"><div class="er-entity-header">PERSONAL_ACCOUNTS</div><div class="er-entity-body"><div><span class="er-pk">🔑 personal_account_id</span></div><div><span class="er-fk">🔗 user_id</span> FK UNIQUE</div><div>status ENUM</div></div></div>
+    <div class="er-entity er-sub"><div class="er-entity-header">AGENTS</div><div class="er-entity-body"><div><span class="er-pk">🔑 agent_id</span></div><div><span class="er-fk">🔗 user_id</span> FK UNIQUE</div><div>business_name VARCHAR</div><div>commission_rate NUMERIC</div><div>status ENUM</div><div><span class="er-fk">🔗 approved_by</span> FK → admins</div></div></div>
+    <div class="er-entity er-sub"><div class="er-entity-header">MERCHANTS</div><div class="er-entity-body"><div><span class="er-pk">🔑 merchant_id</span></div><div><span class="er-fk">🔗 user_id</span> FK UNIQUE</div><div>business_name VARCHAR</div><div>trade_license VARCHAR</div><div>status ENUM</div><div><span class="er-fk">🔗 approved_by</span> FK → admins</div></div></div>
+    <div class="er-entity er-sub"><div class="er-entity-header">BILLERS</div><div class="er-entity-body"><div><span class="er-pk">🔑 biller_id</span></div><div><span class="er-fk">🔗 user_id</span> FK UNIQUE</div><div>status ENUM</div><div><span class="er-fk">🔗 approved_by</span> FK → admins</div></div></div>
+    <div class="er-entity er-sub"><div class="er-entity-header">ADMINS</div><div class="er-entity-body"><div><span class="er-pk">🔑 admin_id</span></div><div><span class="er-fk">🔗 user_id</span> FK UNIQUE</div><div>role VARCHAR</div><div>permission_level SMALLINT</div></div></div>
+    <div class="er-entity er-sub"><div class="er-entity-header">SERVICES</div><div class="er-entity-body"><div><span class="er-pk">🔑 service_id</span></div><div><span class="er-fk">🔗 biller_id</span> FK → billers</div><div>service_name ENUM</div><div>organization_name VARCHAR</div></div></div>
+  </div>
+  <h3 style="color:#f1f5f9;font-size:1.1rem;margin:32px 0 16px;">Transaction Tables</h3>
+  <div class="er-container">
+    <div class="er-entity er-txn"><div class="er-entity-header">TRANSACTIONS (Supertype)</div><div class="er-entity-body"><div><span class="er-pk">🔑 transaction_id</span> UUID PK</div><div>reference_no VARCHAR UNIQUE</div><div>transaction_type ENUM</div><div><span class="er-fk">🔗 sender_account_id</span></div><div><span class="er-fk">🔗 receiver_account_id</span></div><div>amount NUMERIC(15,2)</div><div>fee NUMERIC(15,2)</div><div>transaction_status ENUM</div><div>remarks VARCHAR</div><div>transaction_time TIMESTAMP</div></div></div>
+    <div class="er-entity er-txn"><div class="er-entity-header">CASH_TRANSACTIONS</div><div class="er-entity-body"><div><span class="er-fk">🔑🔗 transaction_id</span> PK/FK</div><div><span class="er-fk">🔗 agent_id</span> FK → agents</div><div>cash_type (CASH_IN/CASH_OUT)</div><div>commission NUMERIC</div></div></div>
+    <div class="er-entity er-txn"><div class="er-entity-header">PAYMENT_TRANSACTIONS</div><div class="er-entity-body"><div><span class="er-fk">🔑🔗 transaction_id</span> PK/FK</div><div><span class="er-fk">🔗 merchant_id</span> FK → merchants</div><div>invoice_number VARCHAR</div></div></div>
+    <div class="er-entity er-txn"><div class="er-entity-header">BILL_TRANSACTIONS</div><div class="er-entity-body"><div><span class="er-fk">🔑🔗 transaction_id</span> PK/FK</div><div><span class="er-fk">🔗 biller_id</span> FK → billers</div><div>billing_month VARCHAR</div><div>due_date DATE</div></div></div>
+  </div>
+  <h3 style="color:#f1f5f9;font-size:1.1rem;margin:32px 0 16px;">Audit &amp; Config Tables</h3>
+  <div class="er-container">
+    <div class="er-entity er-audit"><div class="er-entity-header">AUDIT_LOGS</div><div class="er-entity-body"><div><span class="er-pk">🔑 log_id</span> UUID PK</div><div><span class="er-fk">🔗 admin_id</span> FK → admins</div><div><span class="er-fk">🔗 affected_user_id</span> FK → users</div><div><span class="er-fk">🔗 transaction_id</span> FK → transactions</div><div>action VARCHAR(100)</div><div>description TEXT</div><div>ip_address VARCHAR(45)</div><div>log_time TIMESTAMP</div></div></div>
+    <div class="er-entity er-config"><div class="er-entity-header">SYSTEM_SETTINGS</div><div class="er-entity-body"><div><span class="er-pk">🔑 setting_key</span> VARCHAR PK</div><div>setting_value NUMERIC(15,2)</div><div>description VARCHAR</div></div></div>
+  </div>
+</section>
+
+<!-- ========== 4. SPECIALIZATION ========== -->
+<section id="specialization">
+  <span class="section-label">Section 04</span>
+  <h2 class="section-title">Specialization / Generalization</h2>
+  <p class="section-desc">This is the most important DBMS concept in QuickiePay. The <code>users</code> table is a <strong>supertype</strong>, and each role (Personal, Agent, Merchant, Biller, Admin) is a <strong>subtype</strong> with its own table.</p>
+  <div class="card">
+    <h3>🏗️ How It Works in the Database</h3>
+    <p>Every person who signs up gets a row in <code>users</code> (the supertype table) and a row in <code>accounts</code> (their wallet). Then, based on their chosen role, <strong>exactly one</strong> additional row is inserted into the corresponding subtype table:</p>
+    <ul style="margin-top:12px">
+      <li><strong>PERSONAL</strong> → row in <code>personal_accounts</code> (status only)</li>
+      <li><strong>AGENT</strong> → row in <code>agents</code> (business_name, commission_rate, approved_by)</li>
+      <li><strong>BUSINESS</strong> → row in <code>merchants</code> (business_name, trade_license, approved_by)</li>
+      <li><strong>BILLER</strong> → row in <code>billers</code> (approved_by) + row in <code>services</code> (service_name, organization_name)</li>
+      <li><strong>ADMIN</strong> → row in <code>admins</code> (role, permission_level) — inserted directly in DB, not via registration</li>
+    </ul>
+  </div>
+  <div class="highlight-box">
+    <h4>🔑 Key DBMS Concept: The 1:1 Relationship</h4>
+    <p>Each subtype table has a <code>user_id</code> column that is both a <strong>FOREIGN KEY</strong> referencing <code>users(user_id)</code> and a <strong>UNIQUE</strong> constraint. This enforces a strict <strong>1:1 relationship</strong> — one user can only appear in one subtype table.</p>
+  </div>
+  <div class="card">
+    <h3>📝 How It Works in the Code (Registration Flow)</h3>
+    <p>The <code>registerUser()</code> function in <code>authController.js</code> uses a <strong>PostgreSQL transaction</strong> (BEGIN → COMMIT / ROLLBACK) to atomically insert across multiple tables:</p>
+    <div class="code-block">
+<span class="kw">await</span> pool.query(<span class="str">'BEGIN'</span>);
+
+<span class="cm">// 1. Insert into the supertype table</span>
+<span class="kw">await</span> pool.query(<span class="str">`INSERT INTO users (...) VALUES (...)`</span>);
+
+<span class="cm">// 2. Create the wallet</span>
+<span class="kw">await</span> pool.query(<span class="str">`INSERT INTO accounts (user_id, account_type) VALUES ($1, $2)`</span>);
+
+<span class="cm">// 3. Insert into the correct subtype table based on account_type</span>
+<span class="kw">if</span> (account_type === <span class="str">'PERSONAL'</span>)
+    <span class="kw">await</span> pool.query(<span class="str">`INSERT INTO personal_accounts (user_id) ...`</span>);
+<span class="kw">else if</span> (account_type === <span class="str">'AGENT'</span>)
+    <span class="kw">await</span> pool.query(<span class="str">`INSERT INTO agents (user_id, business_name, ...) ...`</span>);
+<span class="kw">else if</span> (account_type === <span class="str">'BUSINESS'</span>)
+    <span class="kw">await</span> pool.query(<span class="str">`INSERT INTO merchants (user_id, business_name, ...) ...`</span>);
+<span class="kw">else if</span> (account_type === <span class="str">'BILLER'</span>) {
+    <span class="kw">await</span> pool.query(<span class="str">`INSERT INTO billers (user_id) ...`</span>);
+    <span class="kw">await</span> pool.query(<span class="str">`INSERT INTO services (biller_id, ...) ...`</span>);
+}
+
+<span class="kw">await</span> pool.query(<span class="str">'COMMIT'</span>);  <span class="cm">// All-or-nothing</span>
+    </div>
+    <p style="margin-top:12px">If <strong>any</strong> INSERT fails (e.g., duplicate phone number, constraint violation), the entire operation is <strong>ROLLBACK</strong>ed — no partial data is ever saved. This is the <strong>Atomicity</strong> property of ACID.</p>
+  </div>
+</section>
+
+<!-- ========== 5. TRANSACTIONS ========== -->
+<section id="transactions">
+  <span class="section-label">Section 05</span>
+  <h2 class="section-title">Transaction Types &amp; Supertype/Subtype</h2>
+  <p class="section-desc">Just like users, <strong>transactions</strong> also follow a Supertype/Subtype model. Every financial operation writes a row to the common <code>transactions</code> table, and type-specific details go into a subtype table.</p>
+  <div class="txn-type-grid">
+    <div class="txn-card"><div class="emoji">💸</div><h4>Send Money</h4><p>Person → Person. Only the supertype <code>transactions</code> table is used. Flat fee applied.</p></div>
+    <div class="txn-card"><div class="emoji">🏧</div><h4>Cash In</h4><p>Agent → Customer. Subtype: <code>cash_transactions</code> with <code>cash_type = 'CASH_IN'</code>. No commission.</p></div>
+    <div class="txn-card"><div class="emoji">💵</div><h4>Cash Out</h4><p>Customer → Agent. Subtype: <code>cash_transactions</code> with <code>cash_type = 'CASH_OUT'</code>. Commission charged.</p></div>
+    <div class="txn-card"><div class="emoji">🛒</div><h4>Merchant Payment</h4><p>Customer → Merchant. Subtype: <code>payment_transactions</code> with <code>merchant_id</code> and optional <code>invoice_number</code>.</p></div>
+    <div class="txn-card"><div class="emoji">📄</div><h4>Bill Payment</h4><p>Customer → Biller. Subtype: <code>bill_transactions</code> with <code>biller_id</code>, <code>billing_month</code>, <code>due_date</code>.</p></div>
+    <div class="txn-card"><div class="emoji">🏦</div><h4>Bank Transfer</h4><p>Biller → Bank (payout). Recorded in custom <code>biller_bank_transfers</code> table alongside a transaction record.</p></div>
+  </div>
+  <div class="highlight-box">
+    <h4>💡 Why Supertype/Subtype for Transactions?</h4>
+    <p>The common <code>transactions</code> table stores shared fields (sender, receiver, amount, fee, status, time) so we can run global queries like "total daily volume" or "all failed transactions" with a single <code>SELECT</code>. The subtype tables only add role-specific metadata (e.g., which agent handled a cash-out, which biller received a bill payment). This avoids NULL-heavy designs and adheres to <strong>3NF normalization</strong>.</p>
+  </div>
+</section>
+
+<!-- ========== 6. SEND MONEY FLOW ========== -->
+<section id="flow-sendmoney">
+  <span class="section-label">Section 06</span>
+  <h2 class="section-title">Data Flow — Send Money</h2>
+  <p class="section-desc">A step-by-step breakdown of what happens when a user sends ৳1,000 to another user. This is the core demonstration of <strong>ACID transactions</strong> and <strong>deadlock prevention</strong>.</p>
+  <div class="flow-diagram">
+    <div class="flow-step"><span class="step-num">1</span><h4>Frontend → POST /api/transactions/send</h4><p>The Next.js page sends <code>{ receiver_phone, amount, pin }</code> with a JWT Bearer token in the Authorization header.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step"><span class="step-num">2</span><h4>Middleware: verifyToken</h4><p><code>jwt.verify()</code> decodes the token, extracts <code>user_id</code>, checks if the user is BLOCKED by querying all subtype tables with COALESCE, and attaches <code>req.user</code>.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step"><span class="step-num">3</span><h4>Controller: Verify PIN</h4><p>JOINs <code>users</code> ↔ <code>accounts</code> to get the sender's <code>pin_hash</code> and <code>account_id</code>. Uses <code>bcrypt.compare(pin, pin_hash)</code> to verify.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step"><span class="step-num">4</span><h4>Lookup Receiver</h4><p>Queries <code>users</code> ↔ <code>accounts</code> by <code>phone_number</code> to get the receiver's <code>account_id</code>. Checks sender ≠ receiver.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step"><span class="step-num">5</span><h4>System Config &amp; Limit Checks</h4><p><code>getSystemConfigs()</code> reads the <code>system_settings</code> table. Checks: amount ≤ <code>MAX_PER_TXN_LIMIT</code>, daily total + amount ≤ <code>DAILY_TXN_LIMIT</code>.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step" style="border-color:rgba(251,146,60,.3)"><span class="step-num" style="background:#f97316">6</span><h4>BEGIN Transaction + Lock Accounts</h4><p><code>BEGIN</code> starts a PostgreSQL transaction. Both accounts are locked with <code>SELECT ... FOR UPDATE</code> in <strong>sorted order</strong> to prevent deadlocks. Re-checks balance after lock.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step" style="border-color:rgba(16,185,129,.3)"><span class="step-num" style="background:#10b981">7</span><h4>Execute Double-Entry Updates</h4><p><code>UPDATE accounts SET balance = balance - (amount + fee) WHERE sender</code><br/><code>UPDATE accounts SET balance = balance + amount WHERE receiver</code></p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step"><span class="step-num">8</span><h4>INSERT into transactions</h4><p>A new row is written to the <code>transactions</code> supertype table with <code>type = 'SEND_MONEY'</code>, <code>status = 'SUCCESS'</code>, and a unique <code>reference_no</code>.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step" style="border-color:rgba(16,185,129,.3)"><span class="step-num" style="background:#10b981">9</span><h4>COMMIT</h4><p>If everything succeeded, <code>COMMIT</code> makes all changes permanent atomically. If any step failed, <code>ROLLBACK</code> undoes everything.</p></div>
+  </div>
+</section>
+
+<!-- ========== 7. CASH OUT FLOW ========== -->
+<section id="flow-cashout">
+  <span class="section-label">Section 07</span>
+  <h2 class="section-title">Data Flow — Cash Out</h2>
+  <p class="section-desc">Cash Out involves a <strong>Customer</strong> and an <strong>Agent</strong>, uses the <code>cash_transactions</code> subtype table, and involves a commission calculation. It writes to <strong>three</strong> database tables in a single atomic transaction.</p>
+  <div class="flow-diagram">
+    <div class="flow-step"><span class="step-num">1</span><h4>Verify Customer PIN + Find Agent by Phone</h4><p>JOINs across <code>users → accounts</code> for the customer, and <code>users → accounts → agents</code> for the agent. Checks agent is ACTIVE.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step"><span class="step-num">2</span><h4>Calculate Fee &amp; Check Limits</h4><p><code>fee = amount × CASH_OUT_FEE_PCT / 100</code> (from system_settings). Checks per-txn limit and daily limit.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step" style="border-color:rgba(251,146,60,.3)"><span class="step-num" style="background:#f97316">3</span><h4>BEGIN + Lock + Balance Update</h4><p>Customer balance <strong>decreases</strong> by (amount + fee).<br/>Agent balance <strong>increases</strong> by (amount + fee) — the agent keeps the fee as commission.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step"><span class="step-num">4</span><h4>INSERT into transactions (Supertype)</h4><p>Records the base transaction with <code>type = 'CASH_OUT'</code>, the amount, and the fee.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step"><span class="step-num">5</span><h4>INSERT into cash_transactions (Subtype)</h4><p>Adds the Cash Out-specific details: <code>agent_id</code>, <code>cash_type = 'CASH_OUT'</code>, <code>commission</code>. Uses the same <code>transaction_id</code> as the PK/FK.</p></div>
+    <div class="flow-arrow">▼</div>
+    <div class="flow-step" style="border-color:rgba(16,185,129,.3)"><span class="step-num" style="background:#10b981">6</span><h4>COMMIT</h4><p>Three tables modified atomically: <code>accounts</code> (×2 UPDATEs), <code>transactions</code> (INSERT), <code>cash_transactions</code> (INSERT).</p></div>
+  </div>
+</section>
+
+<!-- ========== 8. AUTH ========== -->
+<section id="auth">
+  <span class="section-label">Section 08</span>
+  <h2 class="section-title">Authentication &amp; Security</h2>
+  <p class="section-desc">QuickiePay uses <strong>JWT (JSON Web Tokens)</strong> for session management and <strong>bcrypt</strong> for PIN hashing. The database never stores plaintext PINs.</p>
+  <div class="grid-2">
+    <div class="card">
+      <h3>🔐 Login Flow</h3>
+      <ol style="padding-left:20px;color:#94a3b8;font-size:.88rem">
+        <li>User submits phone + PIN</li>
+        <li>Server queries <code>users</code> JOINed with <code>admins</code>, <code>accounts</code>, and all subtype tables</li>
+        <li>Checks if account is BLOCKED (from subtype <code>status</code>)</li>
+        <li><code>bcrypt.compare(pin, pin_hash)</code> — constant-time comparison</li>
+        <li>On success, <code>jwt.sign()</code> generates a token with: <code>user_id</code>, <code>phone</code>, <code>role</code>, <code>isAdmin</code></li>
+        <li>Token is sent to the client, stored in localStorage, and sent with every future API call</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h3>🛡️ Middleware Pipeline</h3>
+      <p>Every protected route passes through this pipeline:</p>
+      <div class="code-block">
+<span class="cm">// Route definition in adminRoutes.js:</span>
+router.get(<span class="str">'/dashboard'</span>,
+  <span class="fn">verifyToken</span>,   <span class="cm">// ① Decodes JWT, checks if BLOCKED</span>
+  <span class="fn">verifyAdmin</span>,   <span class="cm">// ② Checks req.user.role === 'SUPER_ADMIN'</span>
+  <span class="fn">getAdminDashboardData</span>  <span class="cm">// ③ The actual handler</span>
+);
+      </div>
+      <p style="margin-top:12px"><code>verifyToken</code> runs a SQL query to check the user's <code>status</code> across all subtype tables using <code>COALESCE</code>. If status is <code>'BLOCKED'</code>, access is denied — even with a valid token.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 9. ADMIN ========== -->
+<section id="admin">
+  <span class="section-label">Section 09</span>
+  <h2 class="section-title">Admin Panel &amp; Operations</h2>
+  <p class="section-desc">The Super Admin has a full dashboard with real-time statistics, user management, a global ledger, fraud detection, and system configuration.</p>
+  <div class="grid-2">
+    <div class="card">
+      <h3>📊 Dashboard Aggregation</h3>
+      <p>The <code>getAdminDashboardData()</code> function runs <strong>5 queries in parallel</strong> using <code>Promise.all()</code>:</p>
+      <ul>
+        <li><code>COUNT</code> of active users across all subtype tables</li>
+        <li><code>SUM(balance)</code> from all accounts</li>
+        <li><code>SUM(amount)</code> from last 24h successful transactions</li>
+        <li><code>COUNT</code> of unreviewed risky transactions</li>
+        <li>Latest 10 transactions with receiver details</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>🧊 Freeze / Unfreeze Accounts</h3>
+      <p><code>toggleUserStatus()</code> dynamically determines which subtype table to update based on <code>account_type</code>, then flips the ENUM between <code>'ACTIVE'</code> and <code>'BLOCKED'</code> using a <code>CASE</code> expression.</p>
+    </div>
+    <div class="card">
+      <h3>🚨 Fraud Alert Detection</h3>
+      <p>Alerts are identified using <strong>SQL conditions</strong>. The query flags transactions where:</p>
+      <ul>
+        <li><code>amount ≥ 50,000</code> (unusual volume) or <code>amount ≥ 100,000</code> (velocity spike)</li>
+        <li><code>transaction_status = 'FAILED'</code> (suspicious failure)</li>
+        <li><code>is_risk_reviewed IS NULL OR FALSE</code> (not yet reviewed)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>↩️ Transaction Reversal</h3>
+      <p>Inside a single PostgreSQL transaction:</p>
+      <ol style="padding-left:20px;font-size:.85rem">
+        <li>Fetches the transaction with <code>FOR UPDATE</code> row lock</li>
+        <li>Checks it's not already CANCELLED or FAILED</li>
+        <li>Deducts amount from receiver, refunds amount + fee to sender</li>
+        <li>Sets status to <code>'CANCELLED'</code></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 10. AUDIT ========== -->
+<section id="audit">
+  <span class="section-label">Section 10</span>
+  <h2 class="section-title">Audit Logging System</h2>
+  <p class="section-desc">The <code>audit_logs</code> table tracks every sensitive admin action. A reusable <code>logAdminAction()</code> utility writes audit rows after each operation.</p>
+  <div class="card">
+    <h3>📋 What Gets Logged</h3>
+    <table class="schema-table">
+      <thead><tr><th>Admin Action</th><th>action Column</th><th>Linked FK</th><th>Description Example</th></tr></thead>
+      <tbody>
+        <tr><td>Ignore a fraud alert</td><td><code>IGNORE_FRAUD_ALERT</code></td><td><code>transaction_id</code></td><td>"Admin ignored fraud alert"</td></tr>
+        <tr><td>Freeze/Unfreeze a user</td><td><code>TOGGLE_USER_STATUS</code></td><td><code>affected_user_id</code></td><td>"User status changed to BLOCKED"</td></tr>
+        <tr><td>Update a system limit</td><td><code>UPDATE_SYSTEM_SETTING</code></td><td>—</td><td>"Updated MAX_PER_TXN_LIMIT to 100000"</td></tr>
+        <tr><td>Approve an account</td><td><code>APPROVE_ACCOUNT</code></td><td><code>affected_user_id</code></td><td>"Admin approved AGENT account"</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="highlight-box">
+    <h4>🔗 Foreign Key Design in audit_logs</h4>
+    <p>All three FKs (<code>admin_id</code>, <code>affected_user_id</code>, <code>transaction_id</code>) use <code>ON DELETE SET NULL</code>. This means if an admin or user is deleted, the audit record is <strong>preserved</strong> but the FK is set to NULL — the audit trail is never lost.</p>
+  </div>
+</section>
+
+<!-- ========== 11. CONFIG ========== -->
+<section id="config">
+  <span class="section-label">Section 11</span>
+  <h2 class="section-title">System Configuration Table</h2>
+  <p class="section-desc">Instead of hardcoding business rules, QuickiePay stores global limits and fees in the <code>system_settings</code> table — making them adjustable at runtime by the admin.</p>
+  <div class="card">
+    <h3>📐 Key-Value Design</h3>
+    <table class="schema-table">
+      <thead><tr><th>setting_key</th><th>setting_value</th><th>Used In</th></tr></thead>
+      <tbody>
+        <tr><td><code>MAX_PER_TXN_LIMIT</code></td><td>e.g., 75000</td><td>Send Money, Cash Out, Bill Pay, Merchant Pay</td></tr>
+        <tr><td><code>DAILY_TXN_LIMIT</code></td><td>e.g., 200000</td><td>Send Money, Cash Out — daily SUM check</td></tr>
+        <tr><td><code>SEND_MONEY_FLAT_FEE</code></td><td>e.g., 5</td><td>Send Money — added to deduction</td></tr>
+        <tr><td><code>CASH_OUT_FEE_PCT</code></td><td>e.g., 1.85</td><td>Cash Out — percentage-based fee</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:16px">The helper function <code>getSystemConfigs()</code> reads all rows from <code>system_settings</code> and returns them as a JS object. Every transaction controller calls this before processing.</p>
+  </div>
+</section>
+
+<!-- ========== 12. CONCURRENCY ========== -->
+<section id="concurrency">
+  <span class="section-label">Section 12</span>
+  <h2 class="section-title">Concurrency Control &amp; ACID</h2>
+  <p class="section-desc">QuickiePay implements robust concurrency handling to prevent <strong>race conditions</strong>, <strong>deadlocks</strong>, and <strong>double-spending</strong>.</p>
+  <div class="grid-2">
+    <div class="card">
+      <h3>🔒 Pessimistic Locking</h3>
+      <p>Before modifying any account balance, the code acquires an <strong>exclusive row-level lock</strong> using <code>SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE</code>.</p>
+      <p style="margin-top:8px">This prevents two concurrent transactions from reading the same balance before either has updated it (the <strong>lost update</strong> anomaly).</p>
+    </div>
+    <div class="card">
+      <h3>🔀 Deadlock Prevention</h3>
+      <p>When two accounts must be locked (sender + receiver), they are <strong>sorted alphabetically</strong> before locking:</p>
+      <div class="code-block">
+<span class="kw">const</span> accountsToLock = [senderAccountId, receiverAccountId].<span class="fn">sort</span>();
+<span class="kw">await</span> client.query(<span class="str">'SELECT ... FOR UPDATE'</span>, [accountsToLock[<span class="num">0</span>]]);
+<span class="kw">await</span> client.query(<span class="str">'SELECT ... FOR UPDATE'</span>, [accountsToLock[<span class="num">1</span>]]);
+      </div>
+      <p style="margin-top:8px">If Txn A (User1→User2) and Txn B (User2→User1) run simultaneously, both lock in the <strong>same order</strong> — no circular wait, no deadlock.</p>
+    </div>
+    <div class="card">
+      <h3>⚛️ Atomicity — BEGIN / COMMIT / ROLLBACK</h3>
+      <p>Every financial operation wraps its queries in a PostgreSQL transaction block. If the Node.js process crashes mid-operation, the database automatically rolls back the incomplete transaction.</p>
+    </div>
+    <div class="card">
+      <h3>🏊 Connection Pooling</h3>
+      <p>For multi-step transactions, the code uses <code>pool.connect()</code> to get a <strong>dedicated client</strong> (not the shared pool), ensuring all queries within a <code>BEGIN...COMMIT</code> block run on the same connection. The client is always released in a <code>finally</code> block.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 13. API MAP ========== -->
+<section id="api">
+  <span class="section-label">Section 13</span>
+  <h2 class="section-title">Complete API Route Map</h2>
+  <p class="section-desc">The Express server (port 5001) exposes the following RESTful routes. The Next.js frontend (port 3000) calls these via <code>fetch()</code>.</p>
+  <div class="card">
+    <h3>🔑 Auth Routes — /api/auth</h3>
+    <table class="schema-table"><thead><tr><th>Method</th><th>Path</th><th>Controller</th><th>Description</th></tr></thead><tbody>
+      <tr><td>POST</td><td>/register</td><td>registerUser</td><td>Creates user + account + subtype row (atomic)</td></tr>
+      <tr><td>POST</td><td>/login</td><td>loginUser</td><td>Verifies PIN, returns JWT</td></tr>
+    </tbody></table>
+  </div>
+  <div class="card">
+    <h3>💰 Transaction Routes — /api/transactions</h3>
+    <table class="schema-table"><thead><tr><th>Method</th><th>Path</th><th>Tables Written</th></tr></thead><tbody>
+      <tr><td>POST</td><td>/send</td><td>accounts (×2), transactions</td></tr>
+      <tr><td>POST</td><td>/cash-in</td><td>accounts (×2), transactions, cash_transactions</td></tr>
+      <tr><td>POST</td><td>/cash-out</td><td>accounts (×2), transactions, cash_transactions</td></tr>
+      <tr><td>POST</td><td>/make-payment</td><td>accounts (×2), transactions, payment_transactions</td></tr>
+      <tr><td>POST</td><td>/pay-bill</td><td>accounts (×2), transactions, bill_transactions</td></tr>
+      <tr><td>GET</td><td>/history</td><td>— (read-only JOIN query)</td></tr>
+    </tbody></table>
+  </div>
+  <div class="card">
+    <h3>🛡️ Admin Routes — /api/admin</h3>
+    <table class="schema-table"><thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Audit Logged?</th></tr></thead><tbody>
+      <tr><td>GET</td><td>/dashboard</td><td>Token + Admin</td><td>No (read-only)</td></tr>
+      <tr><td>PATCH</td><td>/users/:id/toggle-status</td><td>Token + Admin</td><td><strong>✅ Yes</strong></td></tr>
+      <tr><td>PATCH</td><td>/users/:id/approve</td><td>Token + Admin</td><td><strong>✅ Yes</strong></td></tr>
+      <tr><td>PATCH</td><td>/alerts/:id/ignore</td><td>Token + Admin</td><td><strong>✅ Yes</strong></td></tr>
+      <tr><td>PATCH</td><td>/config/:key</td><td>Token + Admin</td><td><strong>✅ Yes</strong></td></tr>
+      <tr><td>POST</td><td>/transactions/:id/reverse</td><td>Token + Admin</td><td>No</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ========== SUMMARY ========== -->
+<section style="padding-bottom:40px">
+  <span class="section-label">Summary</span>
+  <h2 class="section-title">DBMS Concepts Demonstrated</h2>
+  <p class="section-desc">Every major DBMS concept this project demonstrates, and where it appears.</p>
+  <div class="card">
+    <table class="schema-table"><thead><tr><th>DBMS Concept</th><th>Where in QuickiePay</th></tr></thead><tbody>
+      <tr><td><strong>Specialization / Generalization</strong></td><td><code>users</code> → personal_accounts, agents, merchants, billers, admins</td></tr>
+      <tr><td><strong>Supertype / Subtype (Transactions)</strong></td><td><code>transactions</code> → cash_transactions, payment_transactions, bill_transactions</td></tr>
+      <tr><td><strong>ENUM Types</strong></td><td>account_type, account_status, transaction_type, transaction_status, biller_service</td></tr>
+      <tr><td><strong>UUID Primary Keys</strong></td><td>All tables use <code>uuid_generate_v4()</code> — no serial integers</td></tr>
+      <tr><td><strong>Foreign Keys (ON DELETE)</strong></td><td>CASCADE (users→accounts), RESTRICT (transactions→accounts), SET NULL (audit_logs)</td></tr>
+      <tr><td><strong>CHECK Constraints</strong></td><td><code>balance ≥ 0</code>, <code>amount > 0</code>, <code>fee ≥ 0</code>, <code>sender ≠ receiver</code></td></tr>
+      <tr><td><strong>UNIQUE Constraints</strong></td><td>phone_number, email, national_id, reference_no, subtype user_id</td></tr>
+      <tr><td><strong>Indexes</strong></td><td>On sender_account_id, receiver_account_id, transaction_time, agent_id, admin_id</td></tr>
+      <tr><td><strong>ACID Transactions</strong></td><td>Every financial operation uses BEGIN / COMMIT / ROLLBACK</td></tr>
+      <tr><td><strong>Pessimistic Locking</strong></td><td><code>SELECT ... FOR UPDATE</code> on accounts before balance changes</td></tr>
+      <tr><td><strong>Deadlock Prevention</strong></td><td>Sorted-order locking of account_ids</td></tr>
+      <tr><td><strong>Aggregate Queries</strong></td><td>SUM, COUNT, COALESCE for dashboard stats and daily limits</td></tr>
+      <tr><td><strong>Multi-table JOINs</strong></td><td>Login queries JOIN across 6 tables to resolve role + status</td></tr>
+      <tr><td><strong>Audit Trail</strong></td><td><code>audit_logs</code> table with 3 FKs and IP tracking</td></tr>
+      <tr><td><strong>Configuration Table</strong></td><td><code>system_settings</code> key-value store for runtime-adjustable rules</td></tr>
+      <tr><td><strong>Connection Pooling</strong></td><td><code>pg.Pool</code> with SSL — reuses connections efficiently</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <p>QuickiePay DBMS Project Documentation · Built for academic presentation · September 2026</p>
+</footer>
+
+</body>
+</html>
