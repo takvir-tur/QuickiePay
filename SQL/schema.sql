@@ -272,6 +272,31 @@ CREATE TABLE transactions
     CHECK(sender_account_id <> receiver_account_id)
 );
 
+CREATE TABLE mobile_recharge_transactions
+(
+    recharge_id UUID PRIMARY KEY
+        DEFAULT uuid_generate_v4(),
+
+    account_id UUID NOT NULL
+        REFERENCES accounts(account_id)
+        ON DELETE RESTRICT,
+
+    reference_no VARCHAR(25)
+        UNIQUE NOT NULL,
+
+    operator VARCHAR(20) NOT NULL
+        CHECK (operator IN ('Grameenphone', 'Robi', 'Teletalk', 'Banglalink', 'Airtel')),
+
+    phone_number VARCHAR(11) NOT NULL
+        CHECK (phone_number ~ '^01[0-9]{9}$'),
+
+    amount NUMERIC(15,2) NOT NULL
+        CHECK (amount > 0),
+
+    transaction_time TIMESTAMP
+        DEFAULT CURRENT_TIMESTAMP
+);
+
 -- =============================================================
 -- SEND MONEY TRANSACTIONS
 -- =============================================================
@@ -523,3 +548,109 @@ ON audit_logs(transaction_id);
 
 -- COMMENT ON TABLE audit_logs IS
 -- 'Administrative activity log for auditing purposes.';
+
+-- =============================================================
+-- PROCEDURES, TRIGGERS & FUNCTIONS
+-- (See SQL/procedures_and_triggers.sql for full detailed script)
+-- =============================================================
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+-- Functions
+CREATE OR REPLACE FUNCTION fn_calculate_fee(p_txn_type transaction_type, p_amount NUMERIC)
+RETURNS NUMERIC LANGUAGE plpgsql AS $$
+DECLARE v_fee NUMERIC := 0.00; v_flat_fee NUMERIC; v_pct_fee NUMERIC;
+BEGIN
+    IF p_txn_type = 'SEND_MONEY' THEN
+        SELECT setting_value INTO v_flat_fee FROM system_settings WHERE setting_key = 'SEND_MONEY_FLAT_FEE';
+        v_fee := COALESCE(v_flat_fee, 5.00);
+    ELSIF p_txn_type = 'CASH_OUT' THEN
+        SELECT setting_value INTO v_pct_fee FROM system_settings WHERE setting_key = 'CASH_OUT_FEE_PCT';
+        v_fee := ROUND((p_amount * COALESCE(v_pct_fee, 1.85) / 100.0), 2);
+    END IF;
+    RETURN v_fee;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_check_daily_limit(p_account_id UUID, p_amount NUMERIC)
+RETURNS BOOLEAN LANGUAGE plpgsql AS $$
+DECLARE v_daily_limit NUMERIC; v_current_total NUMERIC;
+BEGIN
+    SELECT setting_value INTO v_daily_limit FROM system_settings WHERE setting_key = 'DAILY_TXN_LIMIT';
+    v_daily_limit := COALESCE(v_daily_limit, 50000.00);
+    SELECT COALESCE(SUM(amount), 0) INTO v_current_total FROM transactions
+    WHERE sender_account_id = p_account_id AND DATE(transaction_time) = CURRENT_DATE AND transaction_status = 'SUCCESS';
+    RETURN (v_current_total + p_amount) <= v_daily_limit;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_get_monthly_spending(p_account_id UUID, p_month INT, p_year INT)
+RETURNS NUMERIC LANGUAGE plpgsql AS $$
+DECLARE v_total NUMERIC;
+BEGIN
+    SELECT COALESCE(SUM(amount + fee), 0) INTO v_total FROM transactions
+    WHERE sender_account_id = p_account_id AND EXTRACT(MONTH FROM transaction_time) = p_month
+      AND EXTRACT(YEAR FROM transaction_time) = p_year AND transaction_status = 'SUCCESS';
+    RETURN v_total;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fn_get_user_account_status(p_user_id UUID)
+RETURNS account_status LANGUAGE plpgsql AS $$
+DECLARE v_status account_status;
+BEGIN
+    SELECT COALESCE(pa.status, ag.status, m.status, b.status, 'ACTIVE'::account_status) INTO v_status
+    FROM users u LEFT JOIN personal_accounts pa ON u.user_id = pa.user_id
+    LEFT JOIN agents ag ON u.user_id = ag.user_id LEFT JOIN merchants m ON u.user_id = m.user_id
+    LEFT JOIN billers b ON u.user_id = b.user_id WHERE u.user_id = p_user_id;
+    RETURN v_status;
+END;
+$$;
+
+-- Triggers
+CREATE OR REPLACE FUNCTION fn_prevent_negative_balance() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.balance < 0 THEN
+        RAISE EXCEPTION 'Database Constraint Violation: Account balance cannot be negative (Attempted: ৳%)', NEW.balance;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_prevent_negative_balance ON accounts;
+CREATE TRIGGER trg_prevent_negative_balance BEFORE UPDATE OR INSERT ON accounts FOR EACH ROW EXECUTE FUNCTION fn_prevent_negative_balance();
+
+CREATE OR REPLACE FUNCTION fn_update_invoice_on_payment() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.invoice_number IS NOT NULL AND NEW.invoice_number <> '' THEN
+        UPDATE merchant_invoices SET status = 'PAID', paid_at = CURRENT_TIMESTAMP
+        WHERE invoice_number = NEW.invoice_number AND merchant_id = NEW.merchant_id AND status <> 'PAID';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_update_invoice_on_payment ON payment_transactions;
+CREATE TRIGGER trg_update_invoice_on_payment AFTER INSERT ON payment_transactions FOR EACH ROW EXECUTE FUNCTION fn_update_invoice_on_payment();
+
+CREATE OR REPLACE FUNCTION fn_auto_audit_transaction() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.amount >= 50000.00 THEN
+        INSERT INTO audit_logs (admin_id, affected_user_id, transaction_id, action, description)
+        VALUES (NULL, (SELECT user_id FROM accounts WHERE account_id = NEW.sender_account_id), NEW.transaction_id, 'FLAGGED_LARGE_TRANSACTION', 'Automated risk alert: Large transaction of ৳' || NEW.amount);
+    ELSIF NEW.transaction_status = 'FAILED' THEN
+        INSERT INTO audit_logs (admin_id, affected_user_id, transaction_id, action, description)
+        VALUES (NULL, (SELECT user_id FROM accounts WHERE account_id = NEW.sender_account_id), NEW.transaction_id, 'FLAGGED_FAILED_TRANSACTION', 'Automated alert: Transaction failed: ' || COALESCE(NEW.remarks, 'None'));
+    END IF;
+    RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_auto_audit_transaction ON transactions;
+CREATE TRIGGER trg_auto_audit_transaction AFTER INSERT ON transactions FOR EACH ROW EXECUTE FUNCTION fn_auto_audit_transaction();
+
+CREATE OR REPLACE FUNCTION fn_update_timestamp() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN NEW.updated_at = CURRENT_TIMESTAMP; RETURN NEW; END;
+$$;
+DROP TRIGGER IF EXISTS trg_users_updated_at ON users;
+CREATE TRIGGER trg_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION fn_update_timestamp();
+DROP TRIGGER IF EXISTS trg_accounts_updated_at ON accounts;
+CREATE TRIGGER trg_accounts_updated_at BEFORE UPDATE ON accounts FOR EACH ROW EXECUTE FUNCTION fn_update_timestamp();

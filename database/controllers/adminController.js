@@ -89,46 +89,29 @@ async function getAllUsers(req, res) {
   }
 }
 
-// Dynamically route the status update to the correct subtype table
+// Dynamically route the status update using PostgreSQL stored procedure sp_toggle_user_status
 async function toggleUserStatus(req, res) {
   const { user_id } = req.params;
   
   try {
-    const typeRes = await pool.query('SELECT account_type FROM accounts WHERE user_id = $1', [user_id]);
-    if (typeRes.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    
-    const accountType = typeRes.rows[0].account_type;
-    let tableName = '';
-    
-    if (accountType === 'PERSONAL') tableName = 'personal_accounts';
-    else if (accountType === 'AGENT') tableName = 'agents';
-    else if (accountType === 'BUSINESS') tableName = 'merchants';
-    else if (accountType === 'BILLER') tableName = 'billers';
-    else return res.status(400).json({ error: 'Cannot update status for this account type' });
+    const spRes = await pool.query('CALL sp_toggle_user_status($1, NULL)', [user_id]);
+    const newStatus = spRes.rows[0]?.p_new_status;
 
-    const updateQuery = `
-      UPDATE ${tableName}
-      SET status = CASE 
-        WHEN status = 'ACTIVE' THEN 'BLOCKED'::account_status 
-        ELSE 'ACTIVE'::account_status 
-      END
-      WHERE user_id = $1
-      RETURNING status
-    `;
-    
-    const result = await pool.query(updateQuery, [user_id]);
+    if (!newStatus) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     
     await logAdminAction(pool, req.user.user_id, 'TOGGLE_USER_STATUS', {
       affectedUserId: user_id,
-      description: `User status changed to ${result.rows[0].status}`,
+      description: `User status changed to ${newStatus}`,
       ipAddress: req.ip || req.headers['x-forwarded-for']
     });
 
-    res.json({ message: 'Status updated', status: result.rows[0].status });
+    res.json({ message: 'Status updated', status: newStatus });
     
   } catch (err) {
     console.error('Error toggling status:', err);
-    res.status(500).json({ error: 'Server error updating status' });
+    res.status(500).json({ error: err.message || 'Server error updating status' });
   }
 }
 

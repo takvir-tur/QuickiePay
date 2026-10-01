@@ -1,5 +1,6 @@
 const pool = require('../db_connection');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { getSystemConfigs } = require('../utils/configHelper');
 
 
@@ -21,115 +22,46 @@ async function makePayment(req, res) {
   const client = await pool.connect();
 
   try {
+    // 1. Verify Payer PIN
     const payerResult = await client.query(`
-      SELECT u.pin_hash, a.account_id AS payer_account_id, a.balance
-      FROM users u
-      JOIN accounts a ON u.user_id = a.user_id
-      WHERE u.user_id = $1
+      SELECT pin_hash FROM users WHERE user_id = $1
     `, [payerUserId]);
 
     if (payerResult.rows.length === 0) {
       return res.status(404).json({ error: 'Account not found' });
     }
 
-    const payer = payerResult.rows[0];
-
-    const isPinValid = await bcrypt.compare(pin, payer.pin_hash);
+    const isPinValid = await bcrypt.compare(pin, payerResult.rows[0].pin_hash);
     if (!isPinValid) {
       return res.status(401).json({ error: 'Invalid PIN' });
     }
 
-    const merchantResult = await client.query(`
-      SELECT u.full_name, m.merchant_id, m.business_name, m.status, a.account_id AS merchant_account_id
-      FROM users u
-      JOIN accounts a ON u.user_id = a.user_id
-      JOIN merchants m ON u.user_id = m.user_id
-      WHERE u.phone_number = $1
-    `, [merchant_phone]);
-
-    if (merchantResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Merchant not found' });
-    }
-
-    const merchant = merchantResult.rows[0];
-
-    if (merchant.status && merchant.status !== 'ACTIVE') {
-      return res.status(403).json({ error: 'This merchant is not currently active' });
-    }
-
-    if (merchant.merchant_account_id === payer.payer_account_id) {
-      return res.status(400).json({ error: 'You cannot pay your own merchant account' });
-    }
-
-    const configs = await getSystemConfigs();
-    if (configs.MAX_PER_TXN_LIMIT && numericAmount > Number(configs.MAX_PER_TXN_LIMIT)) {
-        return res.status(400).json({ error: `Amount exceeds the maximum limit of ৳${configs.MAX_PER_TXN_LIMIT} per transaction.` });
-    }
-
+    // 2. Execute Stored Procedure: sp_merchant_payment
+    // (Also invokes trigger trg_update_invoice_on_payment automatically)
     await client.query('BEGIN');
-
-    // Lock both accounts in deterministic sorted order to prevent deadlocks
-    const accountsToLock = [payer.payer_account_id, merchant.merchant_account_id].sort();
-    await client.query(`SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE`, [accountsToLock[0]]);
-    await client.query(`SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE`, [accountsToLock[1]]);
-
-    const balanceResult = await client.query(`SELECT balance FROM accounts WHERE account_id = $1`, [payer.payer_account_id]);
-
-    if (parseFloat(balanceResult.rows[0].balance) < numericAmount) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Insufficient balance' });
-    }
-
-    await client.query(`UPDATE accounts SET balance = balance - $1 WHERE account_id = $2`, [numericAmount, payer.payer_account_id]);
-    await client.query(`UPDATE accounts SET balance = balance + $1 WHERE account_id = $2`, [numericAmount, merchant.merchant_account_id]);
-
-    const referenceNo = `PAY${Date.now()}${Math.floor(Math.random() * 1000)}`;
-
-    const txResult = await client.query(`
-      INSERT INTO transactions
-      (reference_no, transaction_type, sender_account_id, receiver_account_id, amount, fee, transaction_status, remarks)
-      VALUES ($1, 'MAKE_PAYMENT', $2, $3, $4, 0, 'SUCCESS', $5)
-      RETURNING transaction_id
-    `, [referenceNo, payer.payer_account_id, merchant.merchant_account_id, numericAmount, note || null]);
-
-    const transactionId = txResult.rows[0].transaction_id;
-
-    // Record in payment_transactions table if available
-    try {
-      await client.query(`
-        INSERT INTO payment_transactions (transaction_id, merchant_id, invoice_number)
-        VALUES ($1, $2, $3)
-      `, [transactionId, merchant.merchant_id, invoice_number || null]);
-    } catch (e) {
-      console.warn('payment_transactions insert skipped or error:', e.message);
-    }
-
-    // If an invoice_number was provided, mark that merchant_invoice as PAID
-    if (invoice_number) {
-      try {
-        await client.query(`
-          UPDATE merchant_invoices
-          SET status = 'PAID', paid_at = CURRENT_TIMESTAMP
-          WHERE invoice_number = $1 AND merchant_id = $2
-        `, [invoice_number, merchant.merchant_id]);
-      } catch (e) {
-        console.warn('merchant_invoices update status skipped or error:', e.message);
-      }
-    }
-
+    const spResult = await client.query(
+      'CALL sp_merchant_payment($1, $2, $3, $4, $5, NULL, NULL, NULL, NULL)',
+      [payerUserId, merchant_phone, numericAmount, note || null, invoice_number || null]
+    );
     await client.query('COMMIT');
+
+    const { p_reference_no, p_merchant_name } = spResult.rows[0];
 
     res.status(200).json({
       message: 'Payment successful',
-      referenceNo,
-      merchant: merchant.business_name || merchant.full_name,
+      referenceNo: p_reference_no,
+      merchant: p_merchant_name,
       amount: numericAmount
     });
 
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Make Payment Error:', err.message);
-    res.status(500).json({ error: 'Payment failed: ' + (err.message || 'Server error') });
+    const msg = err.message || 'Payment failed';
+    if (msg.includes('Insufficient') || msg.includes('Merchant not found') || msg.includes('limit') || msg.includes('own merchant') || msg.includes('active')) {
+      return res.status(400).json({ error: msg });
+    }
+    res.status(500).json({ error: 'Payment failed: ' + msg });
   } finally {
     client.release();
   }
@@ -188,117 +120,51 @@ async function sendMoney(req, res) {
     return res.status(400).json({ error: 'Amount must be greater than 0' });
   }
 
-  // 1. Check out connection
   const client = await pool.connect();
   
   try {
-    // 2. Start Transaction
-    await client.query("BEGIN");
-
-    // 3. Get Sender Info & Verify PIN
+    // 1. Verify Sender PIN
     const senderResult = await client.query(`
-      SELECT u.pin_hash, a.account_id
-      FROM users u
-      JOIN accounts a ON u.user_id = a.user_id
-      WHERE u.user_id = $1
+      SELECT pin_hash FROM users WHERE user_id = $1
     `, [senderUserId]);
     
     if (senderResult.rows.length === 0) {
-      await client.query("ROLLBACK");
       return res.status(404).json({ error: 'Sender not found' });
     }
 
-    const sender = senderResult.rows[0];
-    const isPinValid = await bcrypt.compare(pin, sender.pin_hash);
+    const isPinValid = await bcrypt.compare(pin, senderResult.rows[0].pin_hash);
     if (!isPinValid) {
-      await client.query("ROLLBACK");
       return res.status(401).json({ error: 'Invalid PIN' });
     }
 
-    // 4. Get Receiver Info
-    const receiverResult = await client.query(`
-      SELECT a.account_id 
-      FROM users u
-      JOIN accounts a ON u.user_id = a.user_id
-      WHERE u.phone_number = $1
-    `, [receiver_phone]);
+    // 2. Execute Stored Procedure: sp_send_money
+    // (Handles limit checks via fn_check_daily_limit, fee via fn_calculate_fee, locking, and balance updates)
+    await client.query("BEGIN");
+    const spResult = await client.query(
+      'CALL sp_send_money($1, $2, $3, $4, NULL, NULL, NULL, NULL, NULL)',
+      [senderUserId, receiver_phone, numericAmount, note || null]
+    );
+    await client.query("COMMIT");
 
-    if (receiverResult.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: 'Receiver not found' });
-    }
+    const { p_reference_no, p_fee, p_total_deduction } = spResult.rows[0];
 
-    const receiverAccountId = receiverResult.rows[0].account_id;
-    const senderAccountId = sender.account_id;
-
-    if (senderAccountId === receiverAccountId) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ error: 'You cannot send money to yourself' });
-    }
-
-    // 5. Global Configs & Limit Check
-    const configs = await getSystemConfigs();
-
-    if (configs.MAX_PER_TXN_LIMIT && numericAmount > Number(configs.MAX_PER_TXN_LIMIT)) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ error: `Amount exceeds the maximum limit of ৳${configs.MAX_PER_TXN_LIMIT} per transaction.` });
-    }
-    
-    const dailyLimitCheck = await client.query(`
-      SELECT COALESCE(SUM(amount), 0) as daily_total 
-      FROM transactions 
-      WHERE sender_account_id = $1 
-        AND DATE(transaction_time) = CURRENT_DATE 
-        AND transaction_status = 'SUCCESS'
-    `, [senderAccountId]);
-
-    const dailyTotal = Number(dailyLimitCheck.rows[0].daily_total);
-    
-    if ((dailyTotal + numericAmount) > Number(configs.DAILY_TXN_LIMIT)) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ 
-          error: `Transaction exceeds your daily limit of ৳${configs.DAILY_TXN_LIMIT}. (Current daily total: ৳${dailyTotal})` 
-      });
-    }
-
-    const fee = Number(configs.SEND_MONEY_FLAT_FEE);
-    const totalDeduction = Number((numericAmount + fee).toFixed(2));
-
-    // 6. Prevent Deadlocks: Sort Account IDs alphabetically
-    const accountsToLock = [senderAccountId, receiverAccountId].sort();
-
-    // 7. Lock Rows in deterministic order
-    await client.query('SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE', [accountsToLock[0]]);
-    await client.query('SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE', [accountsToLock[1]]);
-
-    // 8. Check Sender's Exact Balance AFTER securing the lock
-    const balanceCheck = await client.query('SELECT balance FROM accounts WHERE account_id = $1', [senderAccountId]);
-    if (parseFloat(balanceCheck.rows[0].balance) < totalDeduction) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Insufficient balance' });
-    }
-
-    // 9. Execute Atomic Updates
-    await client.query('UPDATE accounts SET balance = balance - $1 WHERE account_id = $2', [totalDeduction, senderAccountId]);
-    await client.query('UPDATE accounts SET balance = balance + $1 WHERE account_id = $2', [numericAmount, receiverAccountId]);
-
-    // 10. Record the Transaction
-    const referenceNo = `TXN${Date.now()}`;
-    await client.query(`
-      INSERT INTO transactions (reference_no, transaction_type, sender_account_id, receiver_account_id, amount, fee, transaction_status, remarks)
-      VALUES ($1, 'SEND_MONEY', $2, $3, $4, $5, 'SUCCESS', $6)
-    `, [referenceNo, senderAccountId, receiverAccountId, numericAmount, fee, note || null]);
-
-    // 11. Commit
-    await client.query('COMMIT');
-    res.status(200).json({ message: 'Money sent successfully', referenceNo, amount: numericAmount, fee, totalDeduction });
+    res.status(200).json({
+      message: 'Money sent successfully',
+      referenceNo: p_reference_no,
+      amount: numericAmount,
+      fee: parseFloat(p_fee),
+      totalDeduction: parseFloat(p_total_deduction)
+    });
 
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Send Money Error:', err.message);
-    res.status(500).json({ error: 'Transaction failed' });
+    const msg = err.message || 'Transaction failed';
+    if (msg.includes('Insufficient') || msg.includes('Receiver not found') || msg.includes('limit') || msg.includes('yourself')) {
+      return res.status(400).json({ error: msg });
+    }
+    res.status(500).json({ error: 'Transaction failed: ' + msg });
   } finally {
-    // 12. ALWAYS release the client
     client.release();
   }
 }
@@ -334,243 +200,56 @@ async function cashIn(req, res) {
     });
   }
 
+  const client = await pool.connect();
+
   try {
-
-    // -------------------------------------------------
-    // 1. Verify that logged-in user is an AGENT
-    // -------------------------------------------------
-
-    const agentResult = await pool.query(`
-      SELECT
-        u.pin_hash,
-        a.account_id AS agent_account_id,
-        ag.agent_id,
-        ag.status
-      FROM users u
-      JOIN accounts a
-        ON u.user_id = a.user_id
-      JOIN agents ag
-        ON u.user_id = ag.user_id
-      WHERE u.user_id = $1
+    // 1. Verify Agent PIN
+    const agentResult = await client.query(`
+      SELECT pin_hash FROM users WHERE user_id = $1
     `, [agentUserId]);
 
     if (agentResult.rows.length === 0) {
-      return res.status(403).json({
-        error: 'You are not registered as an agent'
-      });
+      return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const agent = agentResult.rows[0];
-
-    if (agent.status !== 'ACTIVE') {
-      return res.status(403).json({
-        error: 'Agent account is not active'
-      });
-    }
-
-    // -------------------------------------------------
-    // 2. Verify Agent PIN
-    // -------------------------------------------------
-
-    const isPinValid = await bcrypt.compare(
-      pin,
-      agent.pin_hash
-    );
-
+    const isPinValid = await bcrypt.compare(pin, agentResult.rows[0].pin_hash);
     if (!isPinValid) {
-      return res.status(401).json({
-        error: 'Invalid PIN'
-      });
+      return res.status(401).json({ error: 'Invalid PIN' });
     }
 
-    // -------------------------------------------------
-    // 3. Find Customer
-    // -------------------------------------------------
+    // 2. Fetch Customer Name for Response
+    const custRes = await client.query('SELECT full_name FROM users WHERE phone_number = $1', [customer_phone]);
+    const customerName = custRes.rows[0]?.full_name || customer_phone;
 
-    const customerResult = await pool.query(`
-      SELECT
-        u.user_id,
-        u.full_name,
-        a.account_id,
-        a.balance
-      FROM users u
-      JOIN accounts a
-        ON u.user_id = a.user_id
-      WHERE u.phone_number = $1
-        AND a.account_type = 'PERSONAL'
-    `, [customer_phone]);
-
-    if (customerResult.rows.length === 0) {
-      return res.status(404).json({
-        error: 'Customer not found'
-      });
-    }
-
-    const customer = customerResult.rows[0];
-
-    if (customer.account_id === agent.agent_account_id) {
-      return res.status(400).json({
-        error: 'You cannot cash in to your own account'
-      });
-    }
-
-    // -------------------------------------------------
-    // 4. Start DB Transaction
-    // -------------------------------------------------
-
-    await pool.query('BEGIN');
-
-    // Lock both accounts
-    const accountsToLock = [
-      agent.agent_account_id,
-      customer.account_id
-    ].sort();
-
-    await pool.query(
-      `SELECT balance
-       FROM accounts
-       WHERE account_id = $1
-       FOR UPDATE`,
-      [accountsToLock[0]]
+    // 3. Execute Stored Procedure: sp_cash_in
+    await client.query('BEGIN');
+    const spResult = await client.query(
+      'CALL sp_cash_in($1, $2, $3, $4, NULL, NULL, NULL)',
+      [agentUserId, customer_phone, numericAmount, note || null]
     );
+    await client.query('COMMIT');
 
-    await pool.query(
-      `SELECT balance
-       FROM accounts
-       WHERE account_id = $1
-       FOR UPDATE`,
-      [accountsToLock[1]]
-    );
-
-    // -------------------------------------------------
-    // 5. Check Agent Balance
-    // -------------------------------------------------
-
-    const balanceResult = await pool.query(`
-      SELECT balance
-      FROM accounts
-      WHERE account_id = $1
-    `, [agent.agent_account_id]);
-
-    const agentBalance =
-      parseFloat(balanceResult.rows[0].balance);
-
-    if (agentBalance < numericAmount) {
-      await pool.query('ROLLBACK');
-
-      return res.status(400).json({
-        error: 'Insufficient agent balance'
-      });
-    }
-
-    // -------------------------------------------------
-    // 6. Transfer Money
-    // -------------------------------------------------
-
-    // Agent balance decreases
-    await pool.query(`
-      UPDATE accounts
-      SET balance = balance - $1
-      WHERE account_id = $2
-    `, [
-      numericAmount,
-      agent.agent_account_id
-    ]);
-
-    // Customer balance increases
-    await pool.query(`
-      UPDATE accounts
-      SET balance = balance + $1
-      WHERE account_id = $2
-    `, [
-      numericAmount,
-      customer.account_id
-    ]);
-
-    // -------------------------------------------------
-    // 7. Create Main Transaction
-    // -------------------------------------------------
-
-    const referenceNo = `CIN${Date.now()}`;
-
-    const transactionResult = await pool.query(`
-      INSERT INTO transactions
-      (
-        reference_no,
-        transaction_type,
-        sender_account_id,
-        receiver_account_id,
-        amount,
-        fee,
-        transaction_status,
-        remarks
-      )
-      VALUES
-      (
-        $1,
-        'CASH_IN',
-        $2,
-        $3,
-        $4,
-        0,
-        'SUCCESS',
-        $5
-      )
-      RETURNING transaction_id
-    `, [
-      referenceNo,
-      agent.agent_account_id,
-      customer.account_id,
-      numericAmount,
-      note || null
-    ]);
-
-    const transactionId =
-      transactionResult.rows[0].transaction_id;
-
-    // -------------------------------------------------
-    // 8. Create Cash Transaction Record
-    // -------------------------------------------------
-
-    await pool.query(`
-      INSERT INTO cash_transactions
-      (
-        transaction_id,
-        agent_id,
-        cash_type,
-        commission
-      )
-      VALUES
-      (
-        $1,
-        $2,
-        'CASH_IN',
-        0
-      )
-    `, [
-      transactionId,
-      agent.agent_id
-    ]);
-
-    await pool.query('COMMIT');
+    const { p_reference_no } = spResult.rows[0];
 
     res.status(200).json({
       message: 'Cash In successful',
-      referenceNo,
-      customer: customer.full_name,
+      referenceNo: p_reference_no,
+      reference_no: p_reference_no,
+      customer: customerName,
       amount: numericAmount,
       commission: 0
     });
 
   } catch (err) {
-
-    await pool.query('ROLLBACK');
-
+    await client.query('ROLLBACK');
     console.error('Cash In Error:', err.message);
-
-    res.status(500).json({
-      error: 'Cash In transaction failed'
-    });
+    const msg = err.message || 'Cash In transaction failed';
+    if (msg.includes('Insufficient') || msg.includes('Customer not found') || msg.includes('active') || msg.includes('own account') || msg.includes('registered as an agent')) {
+      return res.status(400).json({ error: msg });
+    }
+    res.status(500).json({ error: msg });
+  } finally {
+    client.release();
   }
 }
 
@@ -587,8 +266,6 @@ const cashOut = async (req, res) => {
     const client = await pool.connect();
 
     try {
-        await client.query("BEGIN");
-
         // Logged-in user (Customer)
         const userId = req.user.user_id;
 
@@ -599,13 +276,8 @@ const cashOut = async (req, res) => {
             note
         } = req.body;
 
-        // -----------------------------
         // 1. Basic validation
-        // -----------------------------
-
         if (!agent_phone || !amount || !pin) {
-            await client.query("ROLLBACK");
-
             return res.status(400).json({
                 error: "Agent number, amount and PIN are required"
             });
@@ -614,272 +286,68 @@ const cashOut = async (req, res) => {
         const numericAmount = Number(amount);
 
         if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-            await client.query("ROLLBACK");
-
             return res.status(400).json({
                 error: "Invalid amount"
             });
         }
 
-        // -----------------------------
-        // 2. Get logged-in user's account & verify PIN
-        // -----------------------------
-
+        // 2. Get user's account & verify PIN
         const userResult = await client.query(
-            `SELECT
-                u.user_id,
-                u.full_name,
-                u.phone_number,
-                u.pin_hash,
-                acc.account_id,
-                acc.account_type,
-                acc.balance
-             FROM users u
-             JOIN accounts acc
-               ON u.user_id = acc.user_id
-             WHERE u.user_id = $1`,
+            `SELECT pin_hash FROM users WHERE user_id = $1`,
             [userId]
         );
 
         if (userResult.rows.length === 0) {
-            await client.query("ROLLBACK");
-
             return res.status(404).json({
                 error: "User account not found"
             });
         }
 
-        const user = userResult.rows[0];
-
-        // -----------------------------
-        // 3. Check user PIN
-        // -----------------------------
-
         const isPinValid = await bcrypt.compare(
             pin,
-            user.pin_hash
+            userResult.rows[0].pin_hash
         );
 
         if (!isPinValid) {
-            await client.query("ROLLBACK");
-
             return res.status(401).json({
                 error: "Invalid PIN"
             });
         }
 
-        // -----------------------------
-        // 4. Find active agent & agent account
-        // -----------------------------
-
+        // 3. Lookup Agent info for response object
         const agentResult = await client.query(
-            `SELECT
-                u.user_id,
-                u.full_name,
-                u.phone_number,
-                acc.account_id AS agent_account_id,
-                a.agent_id,
-                a.business_name,
-                a.commission_rate,
-                a.status
+            `SELECT u.full_name, u.phone_number, a.business_name
              FROM users u
-             JOIN accounts acc
-               ON u.user_id = acc.user_id
-             JOIN agents a
-               ON u.user_id = a.user_id
-             WHERE u.phone_number = $1
-               AND a.status = 'ACTIVE'`,
+             JOIN agents a ON u.user_id = a.user_id
+             WHERE u.phone_number = $1`,
             [agent_phone]
         );
 
-        if (agentResult.rows.length === 0) {
-            await client.query("ROLLBACK");
+        const agent = agentResult.rows[0] || {
+            full_name: 'Agent',
+            phone_number: agent_phone,
+            business_name: 'Agent Point'
+        };
 
-            return res.status(404).json({
-                error: "Active agent not found with this phone number"
-            });
-        }
-
-        const agent = agentResult.rows[0];
-
-        // -----------------------------
-        // 5. Prevent self cash-out
-        // -----------------------------
-
-        if (agent.user_id === userId || agent.agent_account_id === user.account_id) {
-            await client.query("ROLLBACK");
-
-            return res.status(400).json({
-                error: "You cannot cash out to yourself"
-            });
-        }
-
-        const configs = await getSystemConfigs();
-
-        if (configs.MAX_PER_TXN_LIMIT && numericAmount > Number(configs.MAX_PER_TXN_LIMIT)) {
-            await client.query("ROLLBACK");
-            return res.status(400).json({ error: `Amount exceeds the maximum limit of ৳${configs.MAX_PER_TXN_LIMIT} per transaction.` });
-        }
-
-        const dailyLimitCheck = await client.query(`
-          SELECT COALESCE(SUM(amount), 0) as daily_total 
-          FROM transactions 
-          WHERE sender_account_id = $1 
-            AND DATE(transaction_time) = CURRENT_DATE 
-            AND transaction_status = 'SUCCESS'
-        `, [user.account_id]);
-
-        const dailyTotal = Number(dailyLimitCheck.rows[0].daily_total);
-        
-        if ((dailyTotal + numericAmount) > Number(configs.DAILY_TXN_LIMIT)) {
-            await client.query("ROLLBACK");
-            return res.status(400).json({ 
-                error: `Transaction exceeds your daily limit of ৳${configs.DAILY_TXN_LIMIT}. (Current daily total: ৳${dailyTotal})` 
-            });
-        }
-
-        const fee = (Number(numericAmount) * Number(configs.CASH_OUT_FEE_PCT)) / 100;
-        
-        const totalDeduction = Number((numericAmount + fee).toFixed(2));
-        // -----------------------------
-        // 7. Lock Accounts in deterministic order (Deadlock Prevention)
-        // -----------------------------
-
-        const accountsToLock = [user.account_id, agent.agent_account_id].sort();
-        await client.query(
-            `SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE`,
-            [accountsToLock[0]]
+        // 4. Execute Stored Procedure: sp_cash_out
+        // (Handles limit checks, percentage fee via fn_calculate_fee, locking, and balance updates)
+        await client.query("BEGIN");
+        const spResult = await client.query(
+            'CALL sp_cash_out($1, $2, $3, $4, NULL, NULL, NULL, NULL, NULL)',
+            [userId, agent_phone, numericAmount, note || null]
         );
-        await client.query(
-            `SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE`,
-            [accountsToLock[1]]
-        );
-
-        // Check user balance after securing lock
-        const balanceCheck = await client.query(
-            `SELECT balance FROM accounts WHERE account_id = $1`,
-            [user.account_id]
-        );
-        const currentUserBalance = parseFloat(balanceCheck.rows[0].balance);
-
-        if (currentUserBalance < totalDeduction) {
-            await client.query("ROLLBACK");
-
-            return res.status(400).json({
-                error: `Insufficient balance. Required: ৳${totalDeduction.toFixed(2)} (Amount: ৳${numericAmount.toFixed(2)} + Charge: ৳${fee.toFixed(2)}), Available: ৳${currentUserBalance.toFixed(2)}`,
-                balance: currentUserBalance,
-                required: totalDeduction
-            });
-        }
-
-        // -----------------------------
-        // 8. Deduct money from user (Total deduction with charge)
-        // -----------------------------
-
-        await client.query(
-            `UPDATE accounts
-             SET balance = balance - $1
-             WHERE account_id = $2`,
-            [totalDeduction, user.account_id]
-        );
-
-        // -----------------------------
-        // 9. Add money with charge to agent
-        // Money with charge sent to agent
-        // -----------------------------
-
-        await client.query(
-            `UPDATE accounts
-             SET balance = balance + $1
-             WHERE account_id = $2`,
-            [totalDeduction, agent.agent_account_id]
-        );
-
-        // -----------------------------
-        // 10. Create transaction record
-        // -----------------------------
-
-        const referenceNo = `COUT${Date.now()}`;
-
-        const transactionResult = await client.query(
-            `INSERT INTO transactions
-            (
-                reference_no,
-                transaction_type,
-                sender_account_id,
-                receiver_account_id,
-                amount,
-                fee,
-                transaction_status,
-                remarks
-            )
-            VALUES
-            (
-                $1,
-                'CASH_OUT',
-                $2,
-                $3,
-                $4,
-                $5,
-                'SUCCESS',
-                $6
-            )
-            RETURNING transaction_id, reference_no, amount, fee`,
-            [
-                referenceNo,
-                user.account_id,
-                agent.agent_account_id,
-                numericAmount,
-                fee,
-                note || null
-            ]
-        );
-
-        const transaction = transactionResult.rows[0];
-
-        // -----------------------------
-        // 11. Cash transaction record
-        // -----------------------------
-
-        await client.query(
-            `INSERT INTO cash_transactions
-            (
-                transaction_id,
-                agent_id,
-                cash_type,
-                commission
-            )
-            VALUES
-            (
-                $1,
-                $2,
-                'CASH_OUT',
-                $3
-            )`,
-            [
-                transaction.transaction_id,
-                agent.agent_id,
-                fee
-            ]
-        );
-
-        // -----------------------------
-        // 12. Commit
-        // -----------------------------
-
-        // -----------------------------
-        // 12. Commit
-        // -----------------------------
-
         await client.query("COMMIT");
+
+        const { p_reference_no, p_fee, p_total_deduction } = spResult.rows[0];
 
         return res.status(200).json({
             message: "Cash out successful",
-            referenceNo: transaction.reference_no,
+            referenceNo: p_reference_no,
+            reference_no: p_reference_no,
             amount: numericAmount,
-            charge: fee, 
-            commission: fee, 
-            totalDeduction: totalDeduction,
+            charge: parseFloat(p_fee), 
+            commission: parseFloat(p_fee), 
+            totalDeduction: parseFloat(p_total_deduction),
             agent: {
                 name: agent.full_name,
                 phone: agent.phone_number,
@@ -889,12 +357,14 @@ const cashOut = async (req, res) => {
 
     } catch (error) {
         await client.query("ROLLBACK");
-
         console.error("Cash Out Error:", error);
-
+        const msg = error.message || "Cash out failed";
+        if (msg.includes('Insufficient') || msg.includes('not found') || msg.includes('limit') || msg.includes('yourself')) {
+            return res.status(400).json({ error: msg });
+        }
         return res.status(500).json({
             error: "Cash out failed",
-            details: error.message
+            details: msg
         });
 
     } finally {
@@ -982,13 +452,107 @@ async function getTransactionHistory(req, res) {
       JOIN users u ON a.user_id = u.user_id
       WHERE t.sender_account_id = (SELECT account_id FROM accounts WHERE user_id = $1)
          OR t.receiver_account_id = (SELECT account_id FROM accounts WHERE user_id = $1)
-      ORDER BY t.transaction_time DESC
+      UNION ALL
+      SELECT
+        r.reference_no AS id,
+        'MOBILE_RECHARGE' AS type,
+        r.operator AS "receiverName",
+        r.phone_number AS "receiverPhone",
+        r.amount,
+        r.transaction_time AS date,
+        'SUCCESS' AS status,
+        'Simulated mobile recharge' AS note,
+        0::numeric AS fee
+      FROM mobile_recharge_transactions r
+      JOIN accounts a ON a.account_id = r.account_id
+      WHERE a.user_id = $1
+      ORDER BY date DESC
     `, [userId]);
 
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching history:', err.message);
     res.status(500).json({ error: 'Failed to fetch transaction history' });
+  }
+}
+
+async function mobileRecharge(req, res) {
+  const userId = req.user.user_id;
+  const { operator, phone_number, amount, pin } = req.body;
+  const supportedOperators = ['Grameenphone', 'Robi', 'Teletalk', 'Banglalink', 'Airtel'];
+  const numericAmount = Number(amount);
+
+  if (!supportedOperators.includes(operator)) {
+    return res.status(400).json({ error: 'Select a supported Bangladesh operator' });
+  }
+  if (typeof phone_number !== 'string' || !/^01\d{9}$/.test(phone_number)) {
+    return res.status(400).json({ error: 'Enter a valid 11-digit Bangladesh mobile number' });
+  }
+  if (!Number.isInteger(numericAmount) || numericAmount <= 0 || numericAmount > 10000) {
+    return res.status(400).json({ error: 'Recharge amount must be a whole number between ৳1 and ৳10,000' });
+  }
+  if (typeof pin !== 'string' || !/^\d{4,6}$/.test(pin)) {
+    return res.status(400).json({ error: 'Enter your 4-6 digit PIN' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const userResult = await client.query(
+      'SELECT pin_hash FROM users WHERE user_id = $1',
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+    if (!(await bcrypt.compare(pin, userResult.rows[0].pin_hash))) {
+      return res.status(401).json({ error: 'Invalid PIN' });
+    }
+
+    await client.query('BEGIN');
+    const accountResult = await client.query(
+      'SELECT account_id, balance FROM accounts WHERE user_id = $1 FOR UPDATE',
+      [userId]
+    );
+
+    if (accountResult.rows.length === 0) {
+      throw new Error('Account not found');
+    }
+    if (Number(accountResult.rows[0].balance) < numericAmount) {
+      throw new Error('Insufficient balance');
+    }
+
+    const accountId = accountResult.rows[0].account_id;
+    const referenceNo = `RCH${Date.now().toString(36).toUpperCase()}${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const balanceResult = await client.query(
+      'UPDATE accounts SET balance = balance - $1 WHERE account_id = $2 RETURNING balance',
+      [numericAmount, accountId]
+    );
+    await client.query(
+      `INSERT INTO mobile_recharge_transactions
+        (account_id, reference_no, operator, phone_number, amount)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [accountId, referenceNo, operator, phone_number, numericAmount]
+    );
+    await client.query('COMMIT');
+
+    return res.status(200).json({
+      message: 'Simulated mobile recharge successful',
+      referenceNo,
+      operator,
+      phone_number,
+      amount: numericAmount,
+      balance: balanceResult.rows[0].balance
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Mobile Recharge Error:', err.message);
+    if (err.message.includes('Insufficient') || err.message.includes('Account not found')) {
+      return res.status(400).json({ error: err.message });
+    }
+    return res.status(500).json({ error: 'Mobile recharge failed' });
+  } finally {
+    client.release();
   }
 }
 
@@ -1007,123 +571,44 @@ async function payBill(req, res) {
 
   const client = await pool.connect();
   try {
-    // 1. Validate payer
+    // 1. Verify Payer PIN
     const payerResult = await client.query(`
-      SELECT u.pin_hash, a.account_id AS payer_account_id, a.balance
-      FROM users u
-      JOIN accounts a ON u.user_id = a.user_id
-      WHERE u.user_id = $1
+      SELECT pin_hash FROM users WHERE user_id = $1
     `, [payerUserId]);
 
     if (payerResult.rows.length === 0) {
       return res.status(404).json({ error: 'Payer account not found' });
     }
 
-    const payer = payerResult.rows[0];
-    const isPinValid = await bcrypt.compare(pin, payer.pin_hash);
+    const isPinValid = await bcrypt.compare(pin, payerResult.rows[0].pin_hash);
     if (!isPinValid) {
       return res.status(401).json({ error: 'Invalid PIN' });
     }
 
-    // 2. Resolve biller and receiver account
-    let billerResult;
-    if (biller_id) {
-      billerResult = await client.query(`
-        SELECT b.biller_id, u.full_name, a.account_id AS biller_account_id
-        FROM billers b
-        JOIN users u ON b.user_id = u.user_id
-        JOIN accounts a ON u.user_id = a.user_id
-        WHERE b.biller_id = $1
-      `, [biller_id]);
-    } else if (service_id) {
-      billerResult = await client.query(`
-        SELECT b.biller_id, s.organization_name AS full_name, a.account_id AS biller_account_id
-        FROM services s
-        JOIN billers b ON s.biller_id = b.biller_id
-        JOIN users u ON b.user_id = u.user_id
-        JOIN accounts a ON u.user_id = a.user_id
-        WHERE s.service_id = $1
-      `, [service_id]);
-    } else if (biller_phone) {
-      billerResult = await client.query(`
-        SELECT b.biller_id, u.full_name, a.account_id AS biller_account_id
-        FROM billers b
-        JOIN users u ON b.user_id = u.user_id
-        JOIN accounts a ON u.user_id = a.user_id
-        WHERE u.phone_number = $1
-      `, [biller_phone]);
-    }
-
-    // Fallback to any active biller if none specified or not found
-    if (!billerResult || billerResult.rows.length === 0) {
-      billerResult = await client.query(`
-        SELECT b.biller_id, u.full_name, a.account_id AS biller_account_id
-        FROM billers b
-        JOIN users u ON b.user_id = u.user_id
-        JOIN accounts a ON u.user_id = a.user_id
-        LIMIT 1
-      `);
-    }
-
-    if (billerResult.rows.length === 0) {
-      return res.status(404).json({ error: 'No registered biller found to receive payment' });
-    }
-
-    const biller = billerResult.rows[0];
-
-    if (biller.biller_account_id === payer.payer_account_id) {
-      return res.status(400).json({ error: 'You cannot pay a bill to your own account' });
-    }
-
+    // 2. Execute Stored Procedure: sp_pay_bill
     await client.query('BEGIN');
-
-    // Deadlock-free locking
-    const accountsToLock = [payer.payer_account_id, biller.biller_account_id].sort();
-    await client.query(`SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE`, [accountsToLock[0]]);
-    await client.query(`SELECT balance FROM accounts WHERE account_id = $1 FOR UPDATE`, [accountsToLock[1]]);
-
-    const balanceCheck = await client.query(`SELECT balance FROM accounts WHERE account_id = $1`, [payer.payer_account_id]);
-    if (parseFloat(balanceCheck.rows[0].balance) < numericAmount) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Insufficient balance' });
-    }
-
-    await client.query(`UPDATE accounts SET balance = balance - $1 WHERE account_id = $2`, [numericAmount, payer.payer_account_id]);
-    await client.query(`UPDATE accounts SET balance = balance + $1 WHERE account_id = $2`, [numericAmount, biller.biller_account_id]);
-
-    const referenceNo = `BIL${Date.now()}${Math.floor(Math.random() * 1000)}`;
-    const remarks = note || (account_number ? `Bill Acc: ${account_number}` : 'Utility Bill Payment');
-
-    const txResult = await client.query(`
-      INSERT INTO transactions
-      (reference_no, transaction_type, sender_account_id, receiver_account_id, amount, fee, transaction_status, remarks)
-      VALUES ($1, 'BILL_PAYMENT', $2, $3, $4, 0, 'SUCCESS', $5)
-      RETURNING transaction_id
-    `, [referenceNo, payer.payer_account_id, biller.biller_account_id, numericAmount, remarks]);
-
-    const transactionId = txResult.rows[0].transaction_id;
-
-    // Record in bill_transactions table
-    try {
-      await client.query(`
-        INSERT INTO bill_transactions (transaction_id, biller_id, billing_month, due_date)
-        VALUES ($1, $2, $3, $4)
-      `, [
-        transactionId,
-        biller.biller_id,
-        billing_month || new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
-        due_date || null
-      ]);
-    } catch (e) {
-      console.warn('bill_transactions insert warning:', e.message);
-    }
-
+    const spResult = await client.query(
+      'CALL sp_pay_bill($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, NULL, NULL, NULL)',
+      [
+        payerUserId,
+        biller_id || null,
+        service_id || null,
+        biller_phone || null,
+        account_number || null,
+        numericAmount,
+        billing_month || null,
+        due_date || null,
+        note || null
+      ]
+    );
     await client.query('COMMIT');
+
+    const { p_reference_no, p_biller_name } = spResult.rows[0];
 
     res.status(200).json({
       message: 'Bill payment successful',
-      referenceNo,
-      biller: biller.full_name,
+      referenceNo: p_reference_no,
+      biller: p_biller_name,
       amount: numericAmount,
       billing_month: billing_month || new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
       account_number
@@ -1132,7 +617,11 @@ async function payBill(req, res) {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Pay Bill Error:', err.message);
-    res.status(500).json({ error: 'Bill payment failed: ' + (err.message || 'Server error') });
+    const msg = err.message || 'Bill payment failed';
+    if (msg.includes('Insufficient') || msg.includes('not found') || msg.includes('own account')) {
+      return res.status(400).json({ error: msg });
+    }
+    res.status(500).json({ error: 'Bill payment failed: ' + msg });
   } finally {
     client.release();
   }
@@ -1213,5 +702,6 @@ module.exports = {
   getMerchantLookup,
   getRecentContacts,
   getTransactionHistory, 
-  getAgentLookup 
+  getAgentLookup,
+  mobileRecharge
 };

@@ -40,7 +40,6 @@ const navItems = [
 
 const manageItems = [
   { label: "Settings", icon: Settings },
-  { label: "Help center", icon: FileText },
 ];
 
 export default function MerchantDashboard() {

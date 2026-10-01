@@ -11,7 +11,8 @@ const {
   getMerchantLookup,
   getRecentContacts,
   getTransactionHistory,
-  getAgentLookup
+  getAgentLookup,
+  mobileRecharge
 } = require('../controllers/transactionController');
 
 // Agent Cash In (supports both snake_case and kebab-case)
@@ -36,6 +37,7 @@ router.get('/merchant-lookup/:phone', verifyToken, getMerchantLookup);
 router.get('/recent-contacts', verifyToken, getRecentContacts);
 
 router.post('/send-money', verifyToken, sendMoney);
+router.post('/mobile-recharge', verifyToken, mobileRecharge);
 router.get('/history', verifyToken, getTransactionHistory);
 
 module.exports = router;

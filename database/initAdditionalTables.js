@@ -40,6 +40,16 @@ async function initAdditionalTables() {
         stock_quantity INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS mobile_recharge_transactions (
+        recharge_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        account_id UUID NOT NULL REFERENCES accounts(account_id) ON DELETE RESTRICT,
+        reference_no VARCHAR(25) UNIQUE NOT NULL,
+        operator VARCHAR(20) NOT NULL CHECK (operator IN ('Grameenphone', 'Robi', 'Teletalk', 'Banglalink', 'Airtel')),
+        phone_number VARCHAR(11) NOT NULL CHECK (phone_number ~ '^01[0-9]{9}$'),
+        amount NUMERIC(15,2) NOT NULL CHECK (amount > 0),
+        transaction_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
     console.log('Additional tables created successfully!');
   } catch (err) {

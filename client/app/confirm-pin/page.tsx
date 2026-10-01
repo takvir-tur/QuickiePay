@@ -12,6 +12,8 @@ function ConfirmPinContent() {
   const type = searchParams.get("type") || "Payment";
   const receiver = searchParams.get("receiver") || "";
   const name = searchParams.get("name") || "";
+  const operator = searchParams.get("operator") || "";
+  const isMobileRecharge = type === "Mobile Recharge";
   const amount = Number(searchParams.get("amount")) || 0;
   const charge = Number(searchParams.get("charge")) || 0;
   const total = Number(searchParams.get("total")) || (amount + charge);
@@ -65,7 +67,9 @@ function ConfirmPinContent() {
 
     try {
       const endpoint =
-        type === "Send Money"
+          isMobileRecharge
+            ? "http://localhost:5001/api/transactions/mobile-recharge"
+            : type === "Send Money"
           ? "http://localhost:5001/api/transactions/send-money"
           : type === "Cash Out"
           ? "http://localhost:5001/api/transactions/cash-out"
@@ -82,7 +86,14 @@ function ConfirmPinContent() {
       const accountNumber = searchParams.get("account_number") || searchParams.get("meter_no") || "";
 
       const requestBody =
-        type === "Send Money"
+        isMobileRecharge
+          ? {
+              operator,
+              phone_number: receiver,
+              amount: amount,
+              pin: currentPin,
+            }
+          : type === "Send Money"
           ? {
               receiver_phone: receiver,
               amount: amount,
@@ -189,6 +200,13 @@ function ConfirmPinContent() {
                 </div>
               </div>
             </div>
+          ) : isMobileRecharge ? (
+            <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              <p>Simulated {operator} recharge for {receiver}</p>
+              <p className="mt-1 font-semibold text-gray-900 dark:text-white">
+                ৳{amountLabel} deducted from your wallet
+              </p>
+            </div>
           ) : (
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
               ৳{amountLabel} sent to {name ? `${name} · ` : ""}
@@ -268,9 +286,13 @@ function ConfirmPinContent() {
               <p className="text-xs uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">Amount</p>
               <p className="mt-1 text-3xl font-semibold tracking-tight text-blue-600 dark:text-blue-500">৳{amountLabel}</p>
               <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                {name ? `${name} · ` : ""}
-                {receiver}
+                {isMobileRecharge ? `${operator} · ${receiver}` : `${name ? `${name} · ` : ""}${receiver}`}
               </p>
+              {isMobileRecharge && (
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  Simulation only. No carrier connection will be made.
+                </p>
+              )}
             </div>
           )}
         </div>

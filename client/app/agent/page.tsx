@@ -17,7 +17,6 @@ import {
   LogOut,
   ShieldCheck,
   Settings,
-  FileText
 } from "lucide-react";
 
 const agentNavItems = [
@@ -29,7 +28,6 @@ const agentNavItems = [
 
 const manageItems = [
   { label: "Settings", icon: Settings },
-  { label: "Help center", icon: FileText },
 ];
 
 const agentPrimaryActions = [

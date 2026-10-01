@@ -6,13 +6,11 @@ import { ShieldAlert } from "lucide-react";
 import {
   ArrowUpRight,
   Bell,
-  BarChart3,
   ChevronLeft,
   ChevronRight,
   CreditCard,
   Eye,
   EyeOff,
-  FileText,
   Gift,
   HandCoins,
   LayoutDashboard,
@@ -36,13 +34,10 @@ import QrScannerModal from "@/components/QrScannerModal";
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Transactions", href: "/transactions", icon: ArrowUpRight },
-  { label: "Notifications", icon: Bell },
-  { label: "Statistics", icon: BarChart3 },
 ];
 
 const manageItems = [
   { label: "Settings", icon: Settings },
-  { label: "Help center", icon: FileText },
 ];
 
 const primaryActions = [
@@ -51,7 +46,7 @@ const primaryActions = [
   { label: "Scan QR", href: "#", isQr: true, detail: "Pay via merchant QR", icon: QrCode, tone: "bg-rose-500" },
   { label: "Cash Out", href: "/cash_out", detail: "Agent or ATM", icon: HandCoins, tone: "bg-green-500" },
   { label: "Pay Bill", href: "/pay-bill", detail: "Utilities & more", icon: Receipt, tone: "bg-purple-500" },
-  { label: "Mobile Recharge", href: "#", detail: "Any operator, instantly", icon: Smartphone, tone: "bg-orange-500" },
+  { label: "Mobile Recharge", href: "/mobile-recharge", detail: "All Bangladesh operators", icon: Smartphone, tone: "bg-orange-500" },
 ];
 
 const quickActions = [
